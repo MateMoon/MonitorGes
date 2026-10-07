@@ -1,8 +1,12 @@
 import { useRef, useState } from 'react'
 import { AlertTriangle, ArrowDown, Bot, CheckCircle2, FileSpreadsheet, FileX, Loader2, Mail, Plus, UploadCloud, X, Eye } from 'lucide-react'
-import { CONTEOS, GARANTIAS_DATA, IMPORTS, NOTIFS, RESPONSABLES, STATUS, STATUS_ORDER, USUARIOS, type Status } from './data'
+import { STATUS, STATUS_ORDER, type Status } from '../data'
+import { CONTEOS } from '../data/mockData'
+import { IMPORTS, NOTIFS, RESPONSABLES, USUARIOS } from '../data/mockData'
+import { getGarantias } from '../services/garantias'
+const GARANTIAS_DATA = getGarantias()
 import type { Nav } from './pages1'
-import { Btn, Card, CardHeader, Check2, StatusBadge, Switch, Th, cx, inputCls, tdCls } from './ui'
+import { Btn, Card, CardHeader, Check2, StatusBadge, Th, cx, inputCls, tdCls } from '../ui'
 
 type Toast = (m: string) => void
 

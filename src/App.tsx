@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { Bell, BarChart3, CheckCircle2, History, LayoutDashboard, ListChecks, LogOut, Settings, Siren, Upload } from 'lucide-react'
 import type { Status } from './data'
-import { Alertas, Configuracion, Estadisticas, Historial, Importar } from './pages2'
-import { Dashboard, Detalle, Garantias, Login, Logo, type Nav, type Page } from './pages1'
+import { Alertas, Configuracion, Estadisticas, Historial, Importar } from './pages/pages2'
+import { Dashboard, Detalle, Garantias, Login, Logo, type Nav, type Page } from './pages/pages1'
 import { cx } from './ui'
 
 const MENU: { id: Page; label: string; icon: typeof Bell; title: string }[] = [

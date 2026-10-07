@@ -1,9 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  AlertCircle, ArrowLeft, ArrowRight, Bot, CheckCircle2, ChevronLeft, ChevronRight, Circle, Clock, Eye, FileSpreadsheet, Loader2, Lock, Mail, RefreshCw, Search, ShieldCheck, User, X, CircleSlash, Timer,
+  AlertCircle, ArrowLeft, ArrowRight, Bot, CheckCircle2, ChevronLeft, ChevronRight, Clock, Eye, FileSpreadsheet, Loader2, Lock, Mail, RefreshCw, Search, ShieldCheck, User, X, CircleSlash, Timer,
 } from 'lucide-react'
-import { CONTEOS, GARANTIAS_DATA, PROBLEMAS, RESPONSABLES, STATUS, STATUS_ORDER, fmt, rutFull, type Garantia, type Status } from './data'
-import { Btn, Card, CardHeader, Check2, Days, Empty, StatusBadge, Th, cx, inputCls, tdCls } from './ui'
+import { STATUS, STATUS_ORDER, fmt, rutFull, type Status } from '../data'
+import { CONTEOS, PROBLEMAS, RESPONSABLES } from '../data/mockData'
+import { getGarantias } from '../services/garantias'
+const GARANTIAS_DATA = getGarantias()
+import type { Garantia } from '../types'
+import { Btn, Card, CardHeader, Check2, Days, Empty, StatusBadge, Th, cx, inputCls, tdCls } from '../ui'
 
 export type Page = 'dashboard' | 'garantias' | 'detalle' | 'importar' | 'historial' | 'alertas' | 'estadisticas' | 'configuracion'
 export type Nav = (p: Page, o?: { id?: number; estados?: Status[]; tab?: string }) => void

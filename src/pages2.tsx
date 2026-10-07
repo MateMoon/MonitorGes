@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { AlertTriangle, ArrowDown, Bot, CheckCircle2, FileSpreadsheet, FileX, Loader2, Mail, MessageCircle, Plus, UploadCloud, X, Eye } from 'lucide-react'
+import { AlertTriangle, ArrowDown, Bot, CheckCircle2, FileSpreadsheet, FileX, Loader2, Mail, Plus, UploadCloud, X, Eye } from 'lucide-react'
 import { CONTEOS, GARANTIAS_DATA, IMPORTS, NOTIFS, RESPONSABLES, STATUS, STATUS_ORDER, USUARIOS, type Status } from './data'
 import type { Nav } from './pages1'
 import { Btn, Card, CardHeader, Check2, StatusBadge, Switch, Th, cx, inputCls, tdCls } from './ui'
@@ -211,13 +211,6 @@ export function Alertas({ initialTab, toast }: { initialTab?: string; toast: Toa
             <Card>
               <CardHeader title="Tipo de notificación" />
               <div className="space-y-3.5 p-5"><Check2 checked={resumen} onChange={setResumen} label="Resumen diario" /><Check2 checked={ind} onChange={setInd} label="Alertas individuales para casos críticos" /></div>
-            </Card>
-            <Card className="opacity-80">
-              <div className="flex items-center gap-4 p-5">
-                <span className="grid size-10 place-items-center rounded-lg bg-[#eef1f5] text-muted"><MessageCircle className="size-5" /></span>
-                <div className="flex-1"><p className="font-medium">WhatsApp</p><p className="text-sm text-muted">Disponible próximamente</p></div>
-                <Switch on={false} disabled />
-              </div>
             </Card>
             <div className="flex justify-end"><Btn variant="primary" onClick={() => toast('Configuración de alertas guardada')}>Guardar cambios</Btn></div>
           </div>

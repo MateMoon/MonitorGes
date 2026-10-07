@@ -26,9 +26,15 @@ export const fmt = (d: Date) =>
   `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
 const addDays = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n)
 
-export const RESPONSABLES = ['María Soto', 'Pedro Díaz', 'Andrea Pérez', 'Luis Rojas', 'Camila Vega', 'Tomás Araya']
-export const PROBLEMAS = ['Problema de salud A', 'Problema de salud B', 'Problema de salud C', 'Problema de salud D', 'Problema de salud E', 'Problema de salud F']
-const GARANTIAS = ['Garantía de atención X', 'Garantía de tratamiento Y', 'Garantía de control Z', 'Garantía de diagnóstico W', 'Garantía de seguimiento V']
+export const RESPONSABLES = ['Centro de Salud Rural Pitrufquén']
+export const PROBLEMAS = [
+  'Alzheimer y Otras Demencias · Decreto Nro 22/2019',
+  'Cáncer Cervicouterino Segmento Proceso de Diagnóstico · Decreto Nº 228',
+  'Displasia Luxante de Caderas · Decreto N° 1/2010',
+  'Salud Oral de la Embarazada · Decreto N° 1/2010',
+  'Tratamiento Erradicación HELICOBACTER PYLORI · Decreto N° 4/2013',
+]
+const GARANTIAS = ['Tamizaje PAP', 'Tratamiento', 'Alta Integral', 'Screning de Radiografía de Caderas']
 
 const NOMBRES = ['Juan', 'Ana', 'Carlos', 'Rosa', 'Mario', 'Elena', 'Jorge', 'Paula', 'Hugo', 'Sofía', 'Diego', 'Marta', 'Felipe', 'Gloria', 'Ramón', 'Inés', 'Óscar', 'Lucía', 'Iván', 'Teresa']
 const APELL = ['Pérez', 'González', 'Muñoz', 'Rojas', 'Díaz', 'Soto', 'Contreras', 'Silva', 'Martínez', 'Sepúlveda', 'Morales', 'Fuentes', 'Vargas', 'Reyes', 'Castro', 'Tapia']
@@ -75,7 +81,7 @@ export const GARANTIAS_DATA: Garantia[] = OFFSETS.map((dias, i) => {
     limite,
     dias,
     estado: statusFor(dias),
-    responsable: i === 0 ? 'María Soto' : i === 1 ? 'Pedro Díaz' : i === 2 ? 'Andrea Pérez' : RESPONSABLES[(i * 5 + 2) % RESPONSABLES.length],
+    responsable: RESPONSABLES[0],
   }
 })
 
@@ -94,18 +100,18 @@ export const IMPORTS = [
 ] as const
 
 export const NOTIFS: { fecha: string; garantia: string; paciente: string; tipo: string; dest: string; canal: string; estado: 'Enviado' | 'Pendiente' | 'Error' }[] = [
-  ['07/10/2026', 'Garantía A', 'Juan Pérez', '7 días', 'responsable@institucion.cl', 'Pendiente'],
-  ['06/10/2026', 'Garantía de atención X', 'Juan Pérez', '7 días', 'maria.soto@institucion.cl', 'Enviado'],
-  ['06/10/2026', 'Garantía de tratamiento Y', 'Ana González', '7 días', 'pedro.diaz@institucion.cl', 'Enviado'],
+  ['07/10/2026', 'Tamizaje PAP', 'Juan Pérez', '7 días', 'responsable@institucion.cl', 'Pendiente'],
+  ['06/10/2026', 'Tamizaje PAP', 'Juan Pérez', '7 días', 'centro.salud@institucion.cl', 'Enviado'],
+  ['06/10/2026', 'Tratamiento', 'Ana González', '7 días', 'centro.salud@institucion.cl', 'Enviado'],
   ['06/10/2026', 'Resumen diario', '—', 'Resumen', 'jefatura@institucion.cl', 'Enviado'],
-  ['06/10/2026', 'Garantía de control Z', 'Carlos Muñoz', '7 días', 'andrea.perez@institucion.cl', 'Enviado'],
-  ['06/10/2026', 'Garantía de diagnóstico W', 'Rosa Rojas', '1 día después', 'luis.rojas@institucion.cl', 'Error'],
-  ['05/10/2026', 'Garantía de seguimiento V', 'Mario Silva', '15 días', 'camila.vega@institucion.cl', 'Enviado'],
-  ['05/10/2026', 'Garantía de atención X', 'Elena Soto', '15 días', 'tomas.araya@institucion.cl', 'Enviado'],
-  ['05/10/2026', 'Garantía de control Z', 'Jorge Díaz', 'Vencimiento', 'maria.soto@institucion.cl', 'Error'],
-  ['04/10/2026', 'Garantía de tratamiento Y', 'Paula Fuentes', '30 días', 'pedro.diaz@institucion.cl', 'Enviado'],
+  ['06/10/2026', 'Alta Integral', 'Carlos Muñoz', '7 días', 'centro.salud@institucion.cl', 'Enviado'],
+  ['06/10/2026', 'Screning de Radiografía de Caderas', 'Rosa Rojas', '1 día después', 'centro.salud@institucion.cl', 'Error'],
+  ['05/10/2026', 'Tamizaje PAP', 'Mario Silva', '15 días', 'centro.salud@institucion.cl', 'Enviado'],
+  ['05/10/2026', 'Tratamiento', 'Elena Soto', '15 días', 'centro.salud@institucion.cl', 'Enviado'],
+  ['05/10/2026', 'Alta Integral', 'Jorge Díaz', 'Vencimiento', 'centro.salud@institucion.cl', 'Error'],
+  ['04/10/2026', 'Screning de Radiografía de Caderas', 'Paula Fuentes', '30 días', 'centro.salud@institucion.cl', 'Enviado'],
   ['04/10/2026', 'Resumen diario', '—', 'Resumen', 'jefatura@institucion.cl', 'Enviado'],
-  ['03/10/2026', 'Garantía de atención X', 'Hugo Vargas', '7 días', 'andrea.perez@institucion.cl', 'Enviado'],
+  ['03/10/2026', 'Tamizaje PAP', 'Hugo Vargas', '7 días', 'centro.salud@institucion.cl', 'Enviado'],
 ].map(([fecha, garantia, paciente, tipo, dest, estado]) => ({ fecha, garantia, paciente, tipo, dest, canal: 'Email', estado: estado as 'Enviado' })) as never
 
 export const USUARIOS = [

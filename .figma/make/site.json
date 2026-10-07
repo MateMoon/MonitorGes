@@ -1,0 +1,10 @@
+{
+  "description": "Monitors and manages GES guarantees by tracking expiration dates, enabling quick filtering, alerts, and detailed status views for institutional users.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}

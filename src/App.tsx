@@ -18,11 +18,11 @@ const MENU: { id: Page; label: string; icon: typeof Bell; title: string }[] = [
 export default function App() {
   const [user, setUser] = useState<string | null>(null)
   const [page, setPage] = useState<Page>('dashboard')
-  const [sel, setSel] = useState(1)
+  const [sel, setSel] = useState<string | number>(1)
   const [preset, setPreset] = useState<Status[] | undefined>()
   const [tab, setTab] = useState<string | undefined>()
   const [navKey, setNavKey] = useState(0)
-  const [gest, setGest] = useState<Set<number>>(new Set())
+  const [gest, setGest] = useState<Set<string | number>>(new Set())
   const [toastMsg, setToastMsg] = useState<string | null>(null)
   const [bell, setBell] = useState(false)
 
@@ -33,7 +33,7 @@ export default function App() {
     setPreset(o?.estados); setTab(o?.tab)
     window.scrollTo({ top: 0 })
   }
-  const gestionar = (id: number) => {
+  const gestionar = (id: string | number) => {
     const n = new Set(gest)
     if (n.has(id)) { n.delete(id); toast('Garantía desmarcada como gestionada') } else { n.add(id); toast('Garantía marcada como gestionada') }
     setGest(n)

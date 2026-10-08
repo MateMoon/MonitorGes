@@ -3,8 +3,7 @@ import { AlertTriangle, ArrowDown, Bot, CheckCircle2, FileSpreadsheet, FileX, Lo
 import { STATUS, STATUS_ORDER, type Status } from '../data'
 import { CONTEOS } from '../data/mockData'
 import { IMPORTS, NOTIFS, RESPONSABLES, USUARIOS } from '../data/mockData'
-import { getGarantias } from '../services/garantias'
-const GARANTIAS_DATA = getGarantias()
+import { GARANTIAS_DATA } from '../data/mockData'
 import type { Nav } from './pages1'
 import { Btn, Card, CardHeader, Check2, StatusBadge, Th, cx, inputCls, tdCls } from '../ui'
 

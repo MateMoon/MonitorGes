@@ -44,4 +44,10 @@ describe("API de lectura", () => {
     expect(response.json().data.paciente.rut).toBe("12345678-9");
     expect(response.json().data).toMatchObject({ diasRestantes: expect.any(Number), estado: expect.any(String), responsable: "Centro ficticio" });
   });
+  it("permite solo el origen de desarrollo configurado por defecto", async () => {
+    const allowed = await app.inject({ method: "GET", url: "/api/dashboard", headers: { origin: "http://localhost:8443" } });
+    const denied = await app.inject({ method: "GET", url: "/api/dashboard", headers: { origin: "https://otro-origen.example" } });
+    expect(allowed.headers["access-control-allow-origin"]).toBe("http://localhost:8443");
+    expect(denied.headers["access-control-allow-origin"]).toBeUndefined();
+  });
 });

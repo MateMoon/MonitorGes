@@ -1,0 +1,96 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RolUsuario {
+  ADMIN
+  PROFESIONAL
+  LECTOR
+}
+
+enum EstadoImportacion {
+  COMPLETADA
+  COMPLETADA_CON_OBSERVACIONES
+  FALLIDA
+}
+
+model Paciente {
+  id         String     @id @default(uuid()) @db.Uuid
+  rutNumero  String
+  dv         String
+  nombre     String
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  garantias  Garantia[]
+
+  @@unique([rutNumero, dv])
+}
+
+model Garantia {
+  id                      String    @id @default(uuid()) @db.Uuid
+  pacienteId              String    @db.Uuid
+  problemaSalud           String
+  nombreGarantia          String
+  fechaInicio             DateTime  @db.Date
+  fechaLimite             DateTime  @db.Date
+  responsable             String
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+  gestionadaAt            DateTime?
+  gestionadaPorUsuarioId  String?   @db.Uuid
+  version                 Int       @default(1)
+  paciente                Paciente @relation(fields: [pacienteId], references: [id], onDelete: Restrict)
+  gestionadaPor           Usuario?  @relation("Gestionadas", fields: [gestionadaPorUsuarioId], references: [id], onDelete: SetNull)
+
+  @@index([fechaLimite])
+  @@index([responsable])
+  @@index([pacienteId])
+}
+
+model Usuario {
+  id             String        @id @default(uuid()) @db.Uuid
+  nombre         String
+  username       String        @unique
+  email          String        @unique
+  rol            RolUsuario    @default(LECTOR)
+  activo         Boolean       @default(true)
+  ultimoAccesoAt DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  importaciones  Importacion[]
+  garantias      Garantia[]    @relation("Gestionadas")
+}
+
+model Importacion {
+  id                    String             @id @default(uuid()) @db.Uuid
+  nombreArchivo         String
+  fechaImportacion      DateTime           @default(now())
+  usuarioId             String?            @db.Uuid
+  estado                EstadoImportacion
+  registrosLeidos       Int                @default(0)
+  registrosNuevos       Int                @default(0)
+  registrosActualizados Int                @default(0)
+  registrosSinCambios   Int                @default(0)
+  registrosConError     Int                @default(0)
+  usuario               Usuario?           @relation(fields: [usuarioId], references: [id], onDelete: SetNull)
+  errores               ErrorImportacion[]
+
+  @@index([fechaImportacion])
+}
+
+model ErrorImportacion {
+  id            String      @id @default(uuid()) @db.Uuid
+  importacionId String      @db.Uuid
+  numeroFila    Int
+  codigo        String
+  mensaje       String
+  datosFila     Json?
+  importacion   Importacion @relation(fields: [importacionId], references: [id], onDelete: Cascade)
+
+  @@index([importacionId, numeroFila])
+}

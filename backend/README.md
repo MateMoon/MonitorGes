@@ -1,4 +1,4 @@
-# API Monitor de Garantías GES
+﻿# API Monitor de Garantías GES
 
 Backend independiente en Node.js, TypeScript, Fastify, Prisma y PostgreSQL. No conecta ni modifica los mocks del frontend.
 
@@ -46,7 +46,12 @@ Los tests de integración de rutas necesitan que `DATABASE_URL` apunte a una bas
 - `GET /api/garantias`: lista paginada (`page`, `limit`, máximo 100), con filtros `rut`, `nombre`, `estado` (CSV o repetido), `responsable`, `problemaSalud`, `nombreGarantia`, `fechaLimiteDesde` y `fechaLimiteHasta`. Orden permitido: `fechaLimite`, `fechaInicio`, `nombreGarantia`, `responsable`, `createdAt`; `order=asc|desc`.
 - `GET /api/garantias/:id`: detalle de garantía, paciente y gestión. UUID inválido produce 400; inexistente, 404.
 - `GET /api/dashboard`: total, conteos por estado, hasta ocho garantías urgentes y última importación.
+- `POST /api/importaciones/validar`: recibe un `.xlsx` en el campo multipart `archivo`, valida encabezados y filas, y devuelve resumen, hasta diez filas válidas de vista previa y errores. Límite de 10 MB; no guarda datos en PostgreSQL.
+- `POST /api/importaciones`: vuelve a validar el archivo y persiste las filas válidas. Cada fila se procesa en una transacción que agrupa paciente, garantía, conteo y errores ambiguos; responde con el estado y los conteos finales.
+- `GET /api/importaciones`: historial persistido con paginación (`page`, `limit`; máximo 100).
+
+La coincidencia de garantía es provisional: RUT/DV normalizados + problema de salud + nombre de garantía + fecha de inicio. Fecha límite y responsable son actualizables. Si hay varias coincidencias, la fila se registra como ambigua y no se modifica. Esta clave no ha sido confirmada por FONASA y debe revisarse antes de usar datos reales. Las filas ausentes no eliminan garantías.
 
 Las listas responden `{ data, pagination }`; el dashboard y detalle responden `{ data }`. Los errores usan `{ error: { code, message, details }, requestId }`. Días restantes y estado se calculan con la fecha civil del servidor en `TIME_ZONE` y nunca se persisten. Las fechas de la base son tipo SQL `DATE`.
 
-La estructura separa rutas, controllers, services, repositories, schemas y acceso Prisma. Importación Excel, autenticación, notificaciones y operaciones de escritura quedan fuera de esta entrega.
+La estructura separa rutas, controllers, services, repositories, schemas y acceso Prisma. La persistencia de garantías e importaciones ya está disponible. Autenticación y notificaciones siguen fuera de esta entrega.

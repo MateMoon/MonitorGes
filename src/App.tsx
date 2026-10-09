@@ -98,7 +98,7 @@ export default function App() {
           {page === 'garantias' && <Garantias nav={nav} initial={preset} gestionadas={gest} />}
           {page === 'detalle' && <Detalle id={sel} nav={nav} gestionadas={gest} onGestionar={gestionar} />}
           {page === 'importar' && <Importar nav={nav} toast={toast} />}
-          {page === 'historial' && <Historial toast={toast} />}
+          {page === 'historial' && <Historial />}
           {page === 'alertas' && <Alertas initialTab={tab} toast={toast} />}
           {page === 'estadisticas' && <Estadisticas />}
           {page === 'configuracion' && <Configuracion toast={toast} />}

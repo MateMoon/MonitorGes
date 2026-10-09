@@ -1,10 +1,10 @@
-import { useRef, useState } from 'react'
-import { AlertTriangle, ArrowDown, Bot, CheckCircle2, FileSpreadsheet, FileX, Loader2, Mail, Plus, UploadCloud, X, Eye } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { AlertTriangle, ArrowDown, Bot, CheckCircle2, ChevronLeft, ChevronRight, FileSpreadsheet, FileX, Loader2, Mail, Plus, UploadCloud, X, Eye } from 'lucide-react'
 import { STATUS, STATUS_ORDER, type Status } from '../data'
 import { CONTEOS } from '../data/mockData'
-import { IMPORTS, NOTIFS, RESPONSABLES, USUARIOS } from '../data/mockData'
-import { GARANTIAS_DATA } from '../data/mockData'
+import { IMPORTS, NOTIFS, RESPONSABLES, USUARIOS, GARANTIAS_DATA } from '../data/mockData'
 import type { Nav } from './pages1'
+import { getImportHistory, importFile, validateImportFile, type ImportHistoryItem, type ImportPagination, type ImportResult, type ImportValidationResult } from '../services/importaciones'
 import { Btn, Card, CardHeader, Check2, StatusBadge, Th, cx, inputCls, tdCls } from '../ui'
 
 type Toast = (m: string) => void
@@ -14,164 +14,222 @@ type Step = 'idle' | 'selected' | 'validating' | 'result' | 'importing' | 'done'
 
 export function Importar({ nav, toast }: { nav: Nav; toast: Toast }) {
   const [step, setStep] = useState<Step>('idle')
-  const [file, setFile] = useState({ name: 'Nomina_Garantias_06102026.xlsx', size: '184 KB' })
+  const [file, setFile] = useState<File | null>(null)
+  const [result, setResult] = useState<ImportValidationResult | null>(null)
+  const [importResult, setImportResult] = useState<ImportResult | null>(null)
   const [over, setOver] = useState(false)
   const [bad, setBad] = useState<string | null>(null)
+  const [requestError, setRequestError] = useState<string | null>(null)
   const input = useRef<HTMLInputElement>(null)
+  const importLock = useRef(false)
 
-  const pick = (f?: File | null) => {
-    if (!f) return
-    if (!f.name.toLowerCase().endsWith('.xlsx')) { setBad(f.name); return }
+  const pick = (selected?: File | null) => {
+    if (!selected) return
+    if (!selected.name.toLowerCase().endsWith('.xlsx')) { setBad('Solo se permiten archivos .xlsx.'); return }
+    if (selected.size > 10 * 1024 * 1024) { setBad('El archivo supera el límite de 10 MB.'); return }
     setBad(null)
-    setFile({ name: f.name, size: `${Math.max(1, Math.round(f.size / 1024))} KB` })
+    setRequestError(null)
+    setResult(null)
+    setImportResult(null)
+    setFile(selected)
     setStep('selected')
   }
-  const sample = () => { setBad(null); setFile({ name: 'Nomina_Garantias_06102026.xlsx', size: '184 KB' }); setStep('selected') }
-  const validate = () => { setStep('validating'); setTimeout(() => setStep('result'), 1500) }
-  const doImport = () => { setStep('importing'); setTimeout(() => { setStep('done'); toast('Nómina importada correctamente') }, 1500) }
-  const reset = () => { setStep('idle'); setBad(null) }
-
-  const stepIdx = { idle: 0, selected: 1, validating: 1, result: 2, importing: 2, done: 3 }[step]
-  const steps = ['Seleccionar archivo', 'Validar', 'Revisar resultado', 'Importar']
+  const validate = async () => {
+    if (!file) return
+    setRequestError(null)
+    setStep('validating')
+    try {
+      const validation = await validateImportFile(file)
+      setResult(validation)
+      setStep('result')
+      toast('Validación completada. Revisa las filas antes de confirmar.')
+    } catch (cause) {
+      setStep('selected')
+      setRequestError(cause instanceof Error ? cause.message : 'No fue posible validar el archivo.')
+    }
+  }
+  const confirmImport = async () => {
+    if (!file || importLock.current) return
+    importLock.current = true
+    setRequestError(null)
+    setStep('importing')
+    try {
+      const persisted = await importFile(file)
+      setImportResult(persisted)
+      setStep('done')
+      toast('El resultado de la importación fue guardado.')
+    } catch (cause) {
+      setStep('result')
+      setRequestError(cause instanceof Error ? cause.message : 'No fue posible completar la importación.')
+    } finally {
+      importLock.current = false
+    }
+  }
+  const reset = () => {
+    setStep('idle')
+    setBad(null)
+    setRequestError(null)
+    setResult(null)
+    setImportResult(null)
+    setFile(null)
+    if (input.current) input.current.value = ''
+  }
+  const stepIdx = { idle: 0, selected: 1, validating: 1, result: 2, importing: 3, done: 3 }[step]
+  const steps = ['Seleccionar archivo', 'Validar', 'Revisar resultado', 'Confirmar']
+  const sizeLabel = file ? `${Math.max(1, Math.round(file.size / 1024))} KB` : ''
 
   return (
     <div className="page-in mx-auto max-w-4xl space-y-6">
       <div>
         <h2 className="text-2xl font-semibold">Importar nómina de garantías</h2>
-        <p className="mt-1 text-sm text-muted">Cargue el archivo Excel descargado desde FONASA GES para actualizar la base de garantías.</p>
+        <p className="mt-1 text-sm text-muted">Seleccione, valide y revise el Excel antes de confirmar sus cambios en PostgreSQL.</p>
       </div>
-
       <ol className="flex items-center gap-2">
-        {steps.map((s, i) => (
-          <li key={s} className="flex flex-1 items-center gap-2">
-            <span className={cx('grid size-7 shrink-0 place-items-center rounded-full text-xs font-semibold', i < stepIdx ? 'bg-[#3c9a67] text-white' : i === stepIdx ? 'bg-brand text-white' : 'bg-[#e4e8ee] text-muted')}>{i < stepIdx ? '✓' : i + 1}</span>
-            <span className={cx('text-sm', i === stepIdx ? 'font-semibold' : 'text-muted')}>{s}</span>
-            {i < 3 && <span className="h-px flex-1 bg-line" />}
+        {steps.map((label, index) => (
+          <li key={label} className="flex flex-1 items-center gap-2">
+            <span className={cx('grid size-7 shrink-0 place-items-center rounded-full text-xs font-semibold', index < stepIdx ? 'bg-[#3c9a67] text-white' : index === stepIdx ? 'bg-brand text-white' : 'bg-[#e4e8ee] text-muted')}>{index < stepIdx ? '✓' : index + 1}</span>
+            <span className={cx('text-sm', index === stepIdx ? 'font-semibold' : 'text-muted')}>{label}</span>
+            {index < steps.length - 1 && <span className="h-px flex-1 bg-line" />}
           </li>
         ))}
       </ol>
-
       <div className="flex items-start gap-3 rounded-xl border border-[#efdc9a] bg-[#fffbec] px-4 py-3.5 text-sm text-[#6b4f06]">
         <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-        <p><strong>Importante:</strong> La aplicación utiliza la <strong>Fecha Límite</strong> como referencia principal para determinar el estado de cada garantía.</p>
+        <p><strong>Importante:</strong> La <strong>Fecha Límite</strong> es la fuente de verdad para calcular el estado. La columna de días restantes del Excel no determina el estado.</p>
       </div>
 
-      {step === 'idle' && (
+      {(step === 'idle' || step === 'selected' || step === 'validating') && (
         <Card className="p-6">
-          <div onDragOver={(e) => { e.preventDefault(); setOver(true) }} onDragLeave={() => setOver(false)}
-            onDrop={(e) => { e.preventDefault(); setOver(false); pick(e.dataTransfer.files[0]) }}
-            className={cx('flex flex-col items-center rounded-xl border-2 border-dashed px-8 py-16 text-center transition', over ? 'border-brand bg-brand-soft' : bad ? 'border-[#cc4339] bg-[#fff7f6]' : 'border-[#c4ccd8] bg-[#fafbfc]')}>
-            <div className={cx('grid size-16 place-items-center rounded-full', bad ? 'bg-[#fbe7e5] text-[#a12a22]' : 'bg-brand-soft text-brand')}>{bad ? <FileX className="size-8" /> : <UploadCloud className="size-8" />}</div>
-            <p className="mt-5 text-lg font-semibold">Arrastra aquí el archivo Excel</p>
-            <p className="my-2 text-sm text-muted">o</p>
-            <Btn variant="primary" onClick={() => input.current?.click()}>Seleccionar archivo</Btn>
-            <input ref={input} type="file" accept=".xlsx" className="hidden" onChange={(e) => pick(e.target.files?.[0])} />
-            <p className="mt-5 text-xs text-muted">Formato permitido: <span className="rounded bg-white px-1.5 py-0.5 font-mono ring-1 ring-line">.xlsx</span> · Tamaño máximo 10 MB</p>
-            {bad && <p role="alert" className="mt-3 text-sm font-medium text-[#a12a22]">«{bad}» no es un archivo .xlsx válido.</p>}
-          </div>
-          <p className="mt-4 text-center text-sm text-muted">¿Solo quiere ver la demo? <button onClick={sample} className="font-medium text-brand underline-offset-2 hover:underline">Usar archivo de ejemplo</button></p>
+          {step === 'idle' ? (
+            <div onDragOver={(event) => { event.preventDefault(); setOver(true) }} onDragLeave={() => setOver(false)}
+              onDrop={(event) => { event.preventDefault(); setOver(false); pick(event.dataTransfer.files[0]) }}
+              className={cx('flex flex-col items-center rounded-xl border-2 border-dashed px-8 py-16 text-center transition', over ? 'border-brand bg-brand-soft' : bad ? 'border-[#cc4339] bg-[#fff7f6]' : 'border-[#c4ccd8] bg-[#fafbfc]')}>
+              <div className={cx('grid size-16 place-items-center rounded-full', bad ? 'bg-[#fbe7e5] text-[#a12a22]' : 'bg-brand-soft text-brand')}>{bad ? <FileX className="size-8" /> : <UploadCloud className="size-8" />}</div>
+              <p className="mt-5 text-lg font-semibold">Arrastra aquí el archivo Excel</p><p className="my-2 text-sm text-muted">o</p>
+              <Btn variant="primary" onClick={() => input.current?.click()}>Seleccionar archivo</Btn>
+              <input ref={input} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="hidden" onChange={(event) => pick(event.target.files?.[0])} />
+              <p className="mt-5 text-xs text-muted">Formato permitido: <span className="rounded bg-white px-1.5 py-0.5 font-mono ring-1 ring-line">.xlsx</span> · Tamaño máximo 10 MB</p>
+              {bad && <p role="alert" className="mt-3 text-sm font-medium text-[#a12a22]">{bad}</p>}
+            </div>
+          ) : <>
+            <CardHeader title="Archivo seleccionado" />
+            <div className="flex items-center gap-4 p-5">
+              <span className="grid size-12 place-items-center rounded-lg bg-[#e6f4ec] text-[#256b45]"><FileSpreadsheet className="size-6" /></span>
+              <div className="min-w-0 flex-1"><p className="text-xs uppercase tracking-wider text-muted">Archivo</p><p className="truncate font-mono text-sm font-medium">{file?.name}</p></div>
+              <div><p className="text-xs uppercase tracking-wider text-muted">Tamaño</p><p className="text-sm font-medium">{sizeLabel}</p></div>
+            </div>
+            {requestError && <p role="alert" className="mx-5 mb-4 rounded-lg bg-[#fbe7e5] px-4 py-3 text-sm text-[#a12a22]">{requestError}</p>}
+            <div className="flex justify-between border-t border-line p-4">
+              <Btn onClick={reset} disabled={step === 'validating'}>Cambiar archivo</Btn>
+              <Btn variant="primary" onClick={validate} disabled={step === 'validating'}>{step === 'validating' ? <><Loader2 className="size-4 animate-spin" />Validando archivo…</> : 'Validar archivo'}</Btn>
+            </div>
+          </>}
         </Card>
       )}
 
-      {(step === 'selected' || step === 'validating') && (
+      {(step === 'result' || step === 'importing') && result && (
         <Card>
-          <CardHeader title="Vista previa del archivo" />
-          <div className="flex items-center gap-4 p-5">
-            <span className="grid size-12 place-items-center rounded-lg bg-[#e6f4ec] text-[#256b45]"><FileSpreadsheet className="size-6" /></span>
-            <div className="flex-1"><p className="text-xs uppercase tracking-wider text-muted">Archivo</p><p className="font-mono text-sm font-medium">{file.name}</p></div>
-            <div className="px-6"><p className="text-xs uppercase tracking-wider text-muted">Registros</p><p className="tnum text-xl font-semibold">253</p></div>
-            <div><p className="text-xs uppercase tracking-wider text-muted">Tamaño</p><p className="text-sm font-medium">{file.size}</p></div>
+          <CardHeader title="Resultado de la validación" sub={result.nombreArchivo} />
+          <div className="grid grid-cols-1 gap-3 border-b border-line p-5 sm:grid-cols-3">
+            <div><p className="text-xs uppercase tracking-wider text-muted">Filas leídas</p><p className="tnum mt-1 text-2xl font-semibold">{result.filasLeidas}</p></div>
+            <div><p className="text-xs uppercase tracking-wider text-muted">Filas válidas</p><p className="tnum mt-1 text-2xl font-semibold text-[#256b45]">{result.filasValidas}</p></div>
+            <div><p className="text-xs uppercase tracking-wider text-muted">Filas con errores</p><p className="tnum mt-1 text-2xl font-semibold text-[#a12a22]">{result.filasConErrores}</p></div>
           </div>
-          <div className="overflow-x-auto border-t border-line">
-            <table className="w-full"><thead><tr><Th>RUT</Th><Th>Nombre</Th><Th>Problema de salud</Th><Th>Garantía</Th><Th>Fecha límite</Th></tr></thead>
-              <tbody className="divide-y divide-line">{GARANTIAS_DATA.slice(0, 3).map((g) => <tr key={g.id}><td className={cx(tdCls, 'font-mono text-[13px]')}>{g.rut}-{g.dv}</td><td className={tdCls}>{g.nombre}</td><td className={tdCls}>{g.problema}</td><td className={tdCls}>{g.garantia}</td><td className={cx(tdCls, 'tnum')}>{g.limite.toLocaleDateString('es-CL')}</td></tr>)}</tbody></table>
+          {requestError && <p role="alert" className="mx-5 mt-4 rounded-lg bg-[#fbe7e5] px-4 py-3 text-sm text-[#a12a22]">{requestError}</p>}
+          {result.errores.length > 0 && <div className="mx-5 mt-5 rounded-lg bg-[#fff5ec] px-4 py-3 text-sm text-[#7a3d0d"><p className="font-medium">Errores de validación</p><ul className="mt-2 space-y-1">{result.errores.map((error, index) => <li key={`${error.numeroFila}-${error.codigo}-${index}`}>Fila {error.numeroFila}{error.campo ? ` · ${error.campo}` : ''}: {error.mensaje}</li>)}</ul></div>}
+          <div className="overflow-x-auto p-5">
+            <p className="mb-3 text-sm font-medium">Vista previa de filas válidas (máximo 10)</p>
+            {result.vistaPrevia.length ? <table className="w-full"><thead><tr><Th>RUT</Th><Th>Nombre</Th><Th>Problema de salud</Th><Th>Garantía</Th><Th>Fecha límite</Th></tr></thead>
+              <tbody className="divide-y divide-line">{result.vistaPrevia.map((row) => <tr key={row.numeroFila}><td className={cx(tdCls, 'font-mono text-[13px]')}>{row.rut}-{row.dv}</td><td className={tdCls}>{row.nombre}</td><td className={tdCls}>{row.problemaSalud}</td><td className={tdCls}>{row.nombreGarantia}</td><td className={cx(tdCls, 'tnum')}>{new Date(`${row.fechaLimite}T00:00:00`).toLocaleDateString('es-CL')}</td></tr>)}</tbody></table> : <p className="rounded-lg bg-canvas px-4 py-3 text-sm text-muted">No hay filas válidas para mostrar.</p>}
           </div>
-          <div className="flex justify-between border-t border-line p-4">
-            <Btn onClick={reset} disabled={step === 'validating'}>Cambiar archivo</Btn>
-            <Btn variant="primary" onClick={validate} disabled={step === 'validating'}>{step === 'validating' ? <><Loader2 className="size-4 animate-spin" />Validando estructura y datos…</> : 'Validar archivo'}</Btn>
-          </div>
-        </Card>
-      )}
-
-      {(step === 'result' || step === 'importing') && (
-        <Card>
-          <CardHeader title="Resultado de la validación" sub={file.name} />
-          <ul className="divide-y divide-line">
-            {[
-              [CheckCircle2, 'text-[#3c9a67]', '253', 'registros encontrados'],
-              [CheckCircle2, 'text-[#3c9a67]', '8', 'registros nuevos'],
-              [CheckCircle2, 'text-[#3c9a67]', '32', 'registros actualizados'],
-              [CheckCircle2, 'text-[#3c9a67]', '213', 'sin cambios'],
-              [AlertTriangle, 'text-[#dd7a2c]', '2', 'registros con errores'],
-            ].map(([Ic, c, n, t]) => {
-              const I = Ic as typeof CheckCircle2
-              return <li key={t as string} className="flex items-center gap-3 px-5 py-3"><I className={cx('size-5', c as string)} /><span className="tnum w-12 text-xl font-semibold">{n as string}</span><span className="text-sm">{t as string}</span></li>
-            })}
-          </ul>
-          <div className="mx-5 mb-5 rounded-lg bg-[#fff5ec] px-4 py-3 text-sm text-[#7a3d0d]">
-            <p className="font-medium">2 registros con errores serán omitidos</p>
-            <p className="mt-1 text-xs">Fila 118: Fecha límite con formato inválido · Fila 204: RUT con dígito verificador incorrecto.</p>
+          <div className="mx-5 mb-5 rounded-lg border border-[#efdc9a] bg-[#fffbec] px-4 py-3 text-sm text-[#6b4f06]">
+            <p className="font-medium">Al confirmar, el backend volverá a validar el archivo y guardará solo las filas válidas.</p>
+            <p className="mt-1 text-xs">Las filas con errores o coincidencias ambiguas se registrarán en el informe y no se aplicarán.</p>
           </div>
           <div className="flex justify-between border-t border-line p-4">
             <Btn onClick={reset} disabled={step === 'importing'}>Cancelar</Btn>
-            <Btn variant="primary" onClick={doImport} disabled={step === 'importing'}>{step === 'importing' ? <><Loader2 className="size-4 animate-spin" />Importando…</> : 'Importar a la base de datos'}</Btn>
+            <Btn variant="primary" onClick={confirmImport} disabled={step === 'importing'}>{step === 'importing' ? <><Loader2 className="size-4 animate-spin" />Importando…</> : 'Confirmar e importar'}</Btn>
           </div>
         </Card>
       )}
 
-      {step === 'done' && (
+      {step === 'done' && importResult && (
         <Card className="p-10 text-center">
-          <div className="mx-auto grid size-16 place-items-center rounded-full bg-[#e6f4ec] text-[#3c9a67]"><CheckCircle2 className="size-9" /></div>
-          <h3 className="mt-4 text-xl font-semibold">Importación completada</h3>
-          <p className="mx-auto mt-2 max-w-md text-sm text-muted">Se registraron 8 garantías nuevas y se actualizaron 32. Los estados y las alertas se recalcularon automáticamente.</p>
+          <div className={cx('mx-auto grid size-16 place-items-center rounded-full', importResult.estado === 'FALLIDA' ? 'bg-[#fbe7e5] text-[#a12a22]' : 'bg-[#e6f4ec] text-[#3c9a67]')}><CheckCircle2 className="size-9" /></div>
+          <h3 className="mt-4 text-xl font-semibold">{importResult.estado === 'COMPLETADA' ? 'Importación completada' : importResult.estado === 'COMPLETADA_CON_OBSERVACIONES' ? 'Importación completada con observaciones' : 'Importación fallida'}</h3>
+          <p className="mx-auto mt-2 max-w-md text-sm text-muted">{importResult.nombreArchivo} · {importResult.filasLeidas} filas leídas.</p>
+          <ul className="mx-auto mt-5 max-w-sm space-y-2 text-left text-sm">
+            <li className="flex justify-between"><span>Registros nuevos</span><strong>{importResult.registrosNuevos}</strong></li>
+            <li className="flex justify-between"><span>Registros actualizados</span><strong>{importResult.registrosActualizados}</strong></li>
+            <li className="flex justify-between"><span>Sin cambios</span><strong>{importResult.registrosSinCambios}</strong></li>
+            <li className="flex justify-between"><span>Con errores</span><strong>{importResult.registrosConError}</strong></li>
+          </ul>
+          {importResult.errores.length > 0 && <div className="mx-auto mt-5 max-w-xl rounded-lg bg-[#fff5ec] px-4 py-3 text-left text-sm text-[#7a3d0d]"><p className="font-medium">Filas omitidas</p><ul className="mt-2 max-h-40 space-y-1 overflow-y-auto">{importResult.errores.map((error, index) => <li key={`${error.numeroFila}-${error.codigo}-${index}`}>Fila {error.numeroFila}{error.campo ? ` · ${error.campo}` : ''}: {error.mensaje}</li>)}</ul></div>}
           <div className="mt-6 flex justify-center gap-3"><Btn onClick={() => nav('historial')}>Ver historial</Btn><Btn variant="primary" onClick={() => nav('dashboard')}>Ir al Dashboard</Btn></div>
         </Card>
       )}
     </div>
   )
 }
-
 /* ---------------- HISTORIAL ---------------- */
-export function Historial({ toast }: { toast: Toast }) {
-  const [open, setOpen] = useState<number | null>(null)
-  const badge = (s: string) => s === 'Completado' ? 'bg-[#e6f4ec] text-[#256b45] ring-[#bfe1cd]' : s === 'Fallido' ? 'bg-[#fbe7e5] text-[#a12a22] ring-[#f1b9b4]' : 'bg-[#fcf4d9] text-[#7d5c07] ring-[#efdc9a]'
+export function Historial() {
+  const [rows, setRows] = useState<ImportHistoryItem[]>([])
+  const [pagination, setPagination] = useState<ImportPagination>({ page: 1, limit: 25, total: 0, totalPages: 0 })
+  const [page, setPage] = useState(1)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [open, setOpen] = useState<ImportHistoryItem | null>(null)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    setLoading(true)
+    setError(null)
+    getImportHistory(page, 25, controller.signal)
+      .then((result) => { setRows(result.data); setPagination(result.pagination) })
+      .catch((cause: unknown) => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'No fue posible cargar el historial.') })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false) })
+    return () => controller.abort()
+  }, [page])
+
+  const badge = (status: ImportHistoryItem['estado']) => status === 'COMPLETADA' ? 'bg-[#e6f4ec] text-[#256b45] ring-[#bfe1cd]' : status === 'FALLIDA' ? 'bg-[#fbe7e5] text-[#a12a22] ring-[#f1b9b4]' : 'bg-[#fcf4d9] text-[#7d5c07] ring-[#efdc9a]'
+  const statusLabel = (status: ImportHistoryItem['estado']) => status === 'COMPLETADA' ? 'Completada' : status === 'FALLIDA' ? 'Fallida' : 'Con observaciones'
+  const formatDate = (value: string) => new Intl.DateTimeFormat('es-CL', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value))
+
   return (
     <div className="page-in space-y-5">
-      <div><h2 className="text-2xl font-semibold">Historial de importaciones</h2><p className="mt-1 text-sm text-muted">Registro de todas las nóminas cargadas en el sistema.</p></div>
+      <div><h2 className="text-2xl font-semibold">Historial de importaciones</h2><p className="mt-1 text-sm text-muted">Registro de importaciones guardadas en PostgreSQL.</p></div>
       <Card className="overflow-hidden">
-        <table className="w-full">
+        <div className="overflow-x-auto"><table className="w-full">
           <thead><tr><Th>Fecha</Th><Th>Usuario</Th><Th>Archivo</Th><Th className="text-right">Registros</Th><Th className="text-right">Nuevos</Th><Th className="text-right">Actualizados</Th><Th className="text-right">Errores</Th><Th>Estado</Th><Th /></tr></thead>
           <tbody className="divide-y divide-line">
-            {IMPORTS.map((r, i) => (
-              <tr key={i} className="hover:bg-canvas">
-                <td className={cx(tdCls, 'tnum')}>{r[0]}</td><td className={tdCls}>{r[1]}</td><td className={cx(tdCls, 'font-mono text-[13px]')}>{r[2]}</td>
-                <td className={cx(tdCls, 'tnum text-right')}>{r[3]}</td><td className={cx(tdCls, 'tnum text-right')}>{r[4]}</td><td className={cx(tdCls, 'tnum text-right')}>{r[5]}</td>
-                <td className={cx(tdCls, 'tnum text-right', r[6] > 0 && 'font-semibold text-[#a12a22]')}>{r[6]}</td>
-                <td className={tdCls}><span className={cx('rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset', badge(r[7]))}>{r[7]}</span></td>
-                <td className={cx(tdCls, 'text-right')}><Btn variant="ghost" onClick={() => setOpen(i)} className="!py-1"><Eye className="size-4" />Ver detalle</Btn></td>
+            {loading ? <tr><td colSpan={9} className={`${tdCls} py-8 text-center text-muted`}>Cargando historial…</td></tr> : error ? <tr><td colSpan={9} className={`${tdCls} py-8 text-center text-[#a12a22]`}>{error}</td></tr> : rows.length === 0 ? <tr><td colSpan={9} className={`${tdCls} py-8 text-center text-muted`}>Todavía no hay importaciones guardadas.</td></tr> : rows.map((row) => (
+              <tr key={row.id} className="hover:bg-canvas">
+                <td className={cx(tdCls, 'tnum')}>{formatDate(row.fechaImportacion)}</td><td className={tdCls}>—</td><td className={cx(tdCls, 'font-mono text-[13px]')}>{row.nombreArchivo}</td>
+                <td className={cx(tdCls, 'tnum text-right')}>{row.filasLeidas}</td><td className={cx(tdCls, 'tnum text-right')}>{row.registrosNuevos}</td><td className={cx(tdCls, 'tnum text-right')}>{row.registrosActualizados}</td>
+                <td className={cx(tdCls, 'tnum text-right', row.registrosConError > 0 && 'font-semibold text-[#a12a22]')}>{row.registrosConError}</td>
+                <td className={tdCls}><span className={cx('rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset', badge(row.estado))}>{statusLabel(row.estado)}</span></td>
+                <td className={cx(tdCls, 'text-right')}><Btn variant="ghost" onClick={() => setOpen(row)} className="!py-1"><Eye className="size-4" />Ver detalle</Btn></td>
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></div>
+        {!loading && !error && pagination.totalPages > 1 && <div className="flex items-center justify-between border-t border-line px-5 py-3 text-sm">
+          <span className="text-muted">Página {pagination.page} de {pagination.totalPages} · {pagination.total} importaciones</span>
+          <div className="flex gap-2"><Btn onClick={() => setPage((value) => value - 1)} disabled={page <= 1} className="!px-2 !py-1.5"><ChevronLeft className="size-4" /></Btn><Btn onClick={() => setPage((value) => value + 1)} disabled={page >= pagination.totalPages} className="!px-2 !py-1.5"><ChevronRight className="size-4" /></Btn></div>
+        </div>}
       </Card>
-      {open !== null && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-ink/40 p-6" onClick={() => setOpen(null)}>
-          <Card className="w-full max-w-lg" >
-            <div onClick={(e) => e.stopPropagation()}>
-              <CardHeader title="Detalle de importación" sub={IMPORTS[open][2]} right={<button onClick={() => setOpen(null)}><X className="size-5 text-muted" /></button>} />
-              <dl className="grid grid-cols-2 gap-4 p-5 text-sm">
-                {[['Fecha', IMPORTS[open][0]], ['Usuario', IMPORTS[open][1]], ['Registros', IMPORTS[open][3]], ['Nuevos', IMPORTS[open][4]], ['Actualizados', IMPORTS[open][5]], ['Errores', IMPORTS[open][6]]].map(([k, v]) => <div key={k as string}><dt className="text-xs uppercase tracking-wider text-muted">{k}</dt><dd className="mt-0.5 font-medium">{v}</dd></div>)}
-              </dl>
-              {IMPORTS[open][6] > 0 && IMPORTS[open][7] !== 'Fallido' && <p className="mx-5 mb-4 rounded-lg bg-[#fff5ec] px-3 py-2 text-xs text-[#7a3d0d]">Registros omitidos por RUT o fecha inválidos.</p>}
-              <div className="flex justify-end gap-2 border-t border-line p-4"><Btn onClick={() => toast('Descarga simulada del informe de errores')}>Descargar informe</Btn><Btn variant="primary" onClick={() => setOpen(null)}>Cerrar</Btn></div>
-            </div>
-          </Card>
-        </div>
-      )}
+      {open && <div className="fixed inset-0 z-50 grid place-items-center bg-ink/40 p-6" onClick={() => setOpen(null)}>
+        <Card className="w-full max-w-lg"><div onClick={(event) => event.stopPropagation()}>
+          <CardHeader title="Detalle de importación" sub={open.nombreArchivo} right={<button onClick={() => setOpen(null)}><X className="size-5 text-muted" /></button>} />
+          <dl className="grid grid-cols-2 gap-4 p-5 text-sm">
+            {[["Fecha", formatDate(open.fechaImportacion)], ["Usuario", "—"], ["Filas leídas", open.filasLeidas], ["Nuevos", open.registrosNuevos], ["Actualizados", open.registrosActualizados], ["Sin cambios", open.registrosSinCambios], ["Errores", open.registrosConError], ["Estado", statusLabel(open.estado)]].map(([label, value]) => <div key={String(label)}><dt className="text-xs uppercase tracking-wider text-muted">{label}</dt><dd className="mt-0.5 font-medium">{value}</dd></div>)}
+          </dl>
+          <div className="flex justify-end border-t border-line p-4"><Btn variant="primary" onClick={() => setOpen(null)}>Cerrar</Btn></div>
+          </div></Card>
+      </div>}
     </div>
   )
 }
-
 /* ---------------- ALERTAS ---------------- */
 function NotifBadge({ s }: { s: string }) {
   const c = s === 'Enviado' ? 'bg-[#e6f4ec] text-[#256b45] ring-[#bfe1cd]' : s === 'Pendiente' ? 'bg-[#fcf4d9] text-[#7d5c07] ring-[#efdc9a]' : 'bg-[#fbe7e5] text-[#a12a22] ring-[#f1b9b4]'

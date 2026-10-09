@@ -1,7 +1,9 @@
-﻿import cors from '@fastify/cors';
+import cors from '@fastify/cors';
 import Fastify from 'fastify';
 import { dashboardRoutes } from './modules/dashboard/routes.js';
 import { guaranteeRoutes } from './modules/garantias/routes.js';
+import multipart from '@fastify/multipart';
+import { importValidationRoutes } from './modules/importaciones/routes.js';
 
 export function buildApp() {
   const app = Fastify({ logger: true });
@@ -15,7 +17,9 @@ export function buildApp() {
       callback(null, origin === undefined || allowedOrigins.includes(origin));
     },
   });
+  app.register(multipart, { limits: { fileSize: 10 * 1024 * 1024, files: 1, parts: 1 } });
   app.register(guaranteeRoutes, { prefix: '/api/garantias' });
+  app.register(importValidationRoutes, { prefix: '/api/importaciones' });
   app.register(dashboardRoutes, { prefix: '/api/dashboard' });
   app.setErrorHandler((error, request, reply) => {
     request.log.error(error);

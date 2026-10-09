@@ -55,6 +55,8 @@ Hasta confirmar que tal clave existe, no fusionar automáticamente casos ambiguo
 
 Esto evita tanto pisar otra garantía del mismo paciente como generar duplicados por una corrección de nombre. Requiere decidir si el proceso permite revisión manual, rechazo de importación completa o importación parcial de filas no ambiguas. El contrato de abajo propone importación parcial con errores/ambigüedades informados y transacción por fila válida.
 
+**Implementación provisional de la etapa 5.2:** como la nómina disponible no aporta un identificador estable confirmado, el backend coincide por RUT/DV normalizados + problema de salud + nombre de garantía + fecha de inicio. Una coincidencia única permite modificar fecha límite y responsable; varias coincidencias se registran como ambiguas y no se actualizan. Esta política es solo para datos ficticios y debe confirmarse con la estructura oficial antes de usar datos reales.
+
 ## 4. Convenciones REST
 
 Prefijo `/api`, JSON UTF-8, respuestas de listas con `data` y `pagination`. `limit` predeterminado 25, máximo 100; `page` comienza en 1. Orden permitido mediante `sort` y `order=asc|desc`; rechazar campos de orden desconocidos. Fechas de filtro inclusivas. El formato de error común es `{ "error": { "code": "...", "message": "...", "details": [] }, "requestId": "..." }`.

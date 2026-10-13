@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { Bell, BarChart3, CheckCircle2, History, LayoutDashboard, ListChecks, LogOut, Settings, Siren, Upload } from 'lucide-react'
+import { Bell, CheckCircle2, History, LayoutDashboard, ListChecks, LogOut, Settings, Siren, Upload } from 'lucide-react'
 import type { Status } from './data'
-import { Alertas, Configuracion, Estadisticas, Historial, Importar } from './pages/pages2'
+import { Alertas, Configuracion, Historial, Importar } from './pages/pages2'
 import { Dashboard, Detalle, Garantias, Login, Logo, type Nav, type Page } from './pages/pages1'
 import { cx } from './ui'
 
@@ -11,7 +11,8 @@ const MENU: { id: Page; label: string; icon: typeof Bell; title: string }[] = [
   { id: 'importar', label: 'Importar nómina', icon: Upload, title: 'Importar nómina' },
   { id: 'historial', label: 'Historial de importaciones', icon: History, title: 'Historial de importaciones' },
   { id: 'alertas', label: 'Alertas', icon: Siren, title: 'Alertas' },
-  { id: 'estadisticas', label: 'Estadísticas', icon: BarChart3, title: 'Estadísticas' },
+  // Estadísticas permanece temporalmente deshabilitada.
+  // { id: 'estadisticas', label: 'Estadísticas', icon: BarChart3, title: 'Estadísticas' },
   { id: 'configuracion', label: 'Configuración', icon: Settings, title: 'Configuración' },
 ]
 
@@ -28,6 +29,8 @@ export default function App() {
 
   const toast = (m: string) => { setToastMsg(m); setTimeout(() => setToastMsg(null), 2600) }
   const nav: Nav = (p, o) => {
+    // Estadísticas permanece bloqueada mientras está temporalmente deshabilitada.
+    if (p === 'estadisticas') return
     setPage(p); setBell(false); setNavKey((k) => k + 1)
     if (o?.id) setSel(o.id)
     setPreset(o?.estados); setTab(o?.tab)
@@ -100,7 +103,9 @@ export default function App() {
           {page === 'importar' && <Importar nav={nav} toast={toast} />}
           {page === 'historial' && <Historial />}
           {page === 'alertas' && <Alertas initialTab={tab} toast={toast} />}
+          {/* Estadísticas sigue temporalmente deshabilitada.
           {page === 'estadisticas' && <Estadisticas />}
+          */}
           {page === 'configuracion' && <Configuracion toast={toast} />}
         </main>
       </div>

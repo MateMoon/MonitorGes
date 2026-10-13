@@ -19,6 +19,12 @@ enum EstadoImportacion {
   FALLIDA
 }
 
+enum EstadoEnvioCorreo {
+  EN_PROCESO
+  ENVIADO
+  FALLIDO
+}
+
 model Paciente {
   id         String     @id @default(uuid()) @db.Uuid
   rutNumero  String
@@ -93,4 +99,45 @@ model ErrorImportacion {
   importacion   Importacion @relation(fields: [importacionId], references: [id], onDelete: Cascade)
 
   @@index([importacionId, numeroFila])
+}
+
+model EnvioInformeCorreo {
+  id              String            @id @default(uuid()) @db.Uuid
+  fechaInforme    DateTime          @db.Date
+  destinatario    String
+  estado          EstadoEnvioCorreo @default(EN_PROCESO)
+  intentos        Int               @default(1)
+  iniciadoAt      DateTime          @default(now())
+  enviadoAt       DateTime?
+  messageId       String?
+  codigoError     String?
+  operacionError  String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  intentosDetalle IntentoEnvioCorreo[]
+
+  @@unique([fechaInforme])
+  @@index([estado, iniciadoAt])
+}
+
+model IntentoEnvioCorreo {
+  id             String            @id @default(uuid()) @db.Uuid
+  envioId        String            @db.Uuid
+  numero         Int
+  estado         EstadoEnvioCorreo @default(EN_PROCESO)
+  iniciadoAt     DateTime          @default(now())
+  finalizadoAt   DateTime?
+  messageId      String?
+  codigoError    String?
+  operacionError String?
+  envio          EnvioInformeCorreo @relation(fields: [envioId], references: [id], onDelete: Cascade)
+
+  @@unique([envioId, numero])
+  @@index([envioId, iniciadoAt])
+}
+
+model ConfiguracionNotificaciones {
+  id                 String   @id
+  emailDestinatario  String?
+  updatedAt          DateTime @updatedAt
 }

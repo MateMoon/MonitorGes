@@ -5,6 +5,7 @@ import { CONTEOS } from '../data/mockData'
 import { IMPORTS, NOTIFS, RESPONSABLES, USUARIOS, GARANTIAS_DATA } from '../data/mockData'
 import type { Nav } from './pages1'
 import { getImportHistory, importFile, validateImportFile, type ImportHistoryItem, type ImportPagination, type ImportResult, type ImportValidationResult } from '../services/importaciones'
+import { getNotificationEmailConfig, saveNotificationEmail } from '../services/notificaciones'
 import { Btn, Card, CardHeader, Check2, StatusBadge, Th, cx, inputCls, tdCls } from '../ui'
 
 type Toast = (m: string) => void
@@ -242,6 +243,49 @@ export function Alertas({ initialTab, toast }: { initialTab?: string; toast: Toa
   const [resumen, setResumen] = useState(true)
   const [ind, setInd] = useState(true)
   const [filtro, setFiltro] = useState('Todos')
+  const [email, setEmail] = useState('')
+  const [savedEmail, setSavedEmail] = useState<string | null>(null)
+  const [automaticEnabled, setAutomaticEnabled] = useState(false)
+  const [scheduledTime, setScheduledTime] = useState('08:00')
+  const [emailLoading, setEmailLoading] = useState(true)
+  const [emailSaving, setEmailSaving] = useState(false)
+  const [emailLoadError, setEmailLoadError] = useState<string | null>(null)
+  const [emailSaveError, setEmailSaveError] = useState<string | null>(null)
+  const [emailSavedMessage, setEmailSavedMessage] = useState<string | null>(null)
+  useEffect(() => {
+    const controller = new AbortController()
+    setEmailLoading(true)
+    getNotificationEmailConfig(controller.signal)
+      .then((config) => {
+        setEmail(config.email ?? '')
+        setSavedEmail(config.email)
+        setAutomaticEnabled(config.automaticEnabled)
+        setScheduledTime(config.scheduledTime)
+      })
+      .catch((cause) => {
+        if (!controller.signal.aborted) setEmailLoadError(cause instanceof Error ? cause.message : 'No fue posible cargar la configuración del correo.')
+      })
+      .finally(() => { if (!controller.signal.aborted) setEmailLoading(false) })
+    return () => controller.abort()
+  }, [])
+
+  const saveEmail = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setEmailSaveError(null)
+    setEmailSavedMessage(null)
+    setEmailSaving(true)
+    try {
+      const saved = await saveNotificationEmail(email.trim())
+      setEmail(saved.email)
+      setSavedEmail(saved.email)
+      setEmailSavedMessage('La dirección destinataria se guardó correctamente.')
+      toast('Destinatario de informes actualizado.')
+    } catch (cause) {
+      setEmailSaveError(cause instanceof Error ? cause.message : 'No fue posible guardar la dirección. Intenta nuevamente.')
+    } finally {
+      setEmailSaving(false)
+    }
+  }
   const labels = ['30 días antes', '15 días antes', '7 días antes', '1 día antes', 'Día de vencimiento', '1 día después del vencimiento']
   const rows = NOTIFS.filter((n) => filtro === 'Todos' || n.estado === filtro)
   const tabs = [['config', 'Configuración de alertas'], ['bandeja', 'Bandeja de notificaciones'], ['monitoreo', 'Monitoreo automático']]
@@ -249,11 +293,35 @@ export function Alertas({ initialTab, toast }: { initialTab?: string; toast: Toa
   return (
     <div className="page-in space-y-5">
       <div><h2 className="text-2xl font-semibold">Sistema de alertas</h2></div>
-      <Card className="grid grid-cols-4 divide-x divide-line">
-        <div className="flex items-center gap-3 p-5"><span className="relative flex size-3"><span className="absolute inline-flex size-full animate-ping rounded-full bg-[#3c9a67] opacity-50" /><span className="relative inline-flex size-3 rounded-full bg-[#3c9a67]" /></span><div><p className="font-semibold text-[#256b45]">Sistema automático activo</p><p className="text-xs text-muted">Funciona sin sesión abierta</p></div></div>
-        {[['Última revisión', '06/10/2026 08:00'], ['Próxima revisión', '07/10/2026 08:00'], ['Correos enviados hoy', '14']].map(([k, v]) => <div key={k} className="p-5"><p className="text-xs uppercase tracking-wider text-muted">{k}</p><p className="tnum mt-1 text-lg font-semibold">{v}</p></div>)}
+      <Card className="grid grid-cols-1 divide-y divide-line md:grid-cols-3 md:divide-x md:divide-y-0">
+        <div className="flex items-center gap-3 p-5"><span className={cx('relative flex size-3', automaticEnabled && 'after:absolute after:-inset-1 after:animate-ping after:rounded-full after:bg-[#3c9a67] after:opacity-40')}><span className={cx('relative inline-flex size-3 rounded-full', automaticEnabled ? 'bg-[#3c9a67]' : 'bg-[#98a2b3]')} /></span><div><p className={cx('font-semibold', automaticEnabled ? 'text-[#256b45]' : 'text-muted')}>{emailLoading ? 'Consultando estado' : automaticEnabled ? 'Sistema automático habilitado' : 'Sistema automático deshabilitado'}</p><p className="text-xs text-muted">{emailLoading ? 'Leyendo configuración del backend' : automaticEnabled ? `Informe diario a las ${scheduledTime} (America/Santiago)` : 'No enviará informes mientras esté deshabilitado'}</p></div></div>
+        <div className="p-5"><p className="text-xs uppercase tracking-wider text-muted">Destinatario del informe</p><p className="mt-1 truncate text-sm font-semibold">{emailLoading ? 'Cargando…' : savedEmail ?? 'Sin configurar'}</p></div>
+        <div className="p-5"><p className="text-xs uppercase tracking-wider text-muted">Programación diaria</p><p className="mt-1 text-sm font-semibold">{scheduledTime} · America/Santiago</p></div>
       </Card>
 
+      <Card>
+        <CardHeader title="Configuración de notificaciones por correo" sub="Destinatario persistido en PostgreSQL para el informe automático diario" />
+        <form onSubmit={saveEmail} className="space-y-4 p-5">
+          <div>
+            <label htmlFor="notification-email" className="mb-1.5 block text-sm font-medium">Correo destinatario</label>
+            <input id="notification-email" name="email" type="email" required maxLength={254} autoComplete="email" value={email}
+              onChange={(event) => { setEmail(event.target.value); setEmailSaveError(null); setEmailSavedMessage(null) }}
+              disabled={emailLoading || emailSaving} placeholder="equipo@institucion.cl" className={cx(inputCls, 'max-w-xl')} />
+            <p className="mt-1.5 text-xs text-muted">El informe contiene garantías y fechas límite; no incluye nombre, RUT ni diagnóstico de pacientes.</p>
+          </div>
+          {emailLoadError && <p role="alert" className="rounded-lg bg-[#fbe7e5] px-4 py-3 text-sm text-[#a12a22]">No fue posible cargar la configuración: {emailLoadError}</p>}
+          {emailLoading && <p role="status" className="flex items-center gap-2 text-sm text-muted"><Loader2 className="size-4 animate-spin" />Cargando destinatario guardado…</p>}
+          {!emailLoading && !emailLoadError && !savedEmail && <p className="rounded-lg bg-[#fff8e8] px-4 py-3 text-sm text-[#75550a]">Aún no hay una dirección guardada. El programador no enviará informes hasta que configures una dirección válida.</p>}
+          {!emailLoading && !emailLoadError && savedEmail && <p className="text-xs text-muted">Dirección actualmente guardada: <span className="font-medium text-ink">{savedEmail}</span></p>}
+          <p className={cx('rounded-lg px-4 py-3 text-sm', automaticEnabled ? 'bg-[#e6f4ec] text-[#256b45]' : 'bg-canvas text-muted')}>
+            Envío automático {automaticEnabled ? `habilitado para las ${scheduledTime} (America/Santiago)` : 'deshabilitado en el backend'}.
+            {automaticEnabled && ' Guardar una dirección no envía un correo inmediatamente.'}
+          </p>
+          {emailSaveError && <p role="alert" className="rounded-lg bg-[#fbe7e5] px-4 py-3 text-sm text-[#a12a22]">{emailSaveError}</p>}
+          {emailSavedMessage && <p role="status" className="rounded-lg bg-[#e6f4ec] px-4 py-3 text-sm text-[#256b45]">{emailSavedMessage}</p>}
+          <div className="flex justify-end"><Btn variant="primary" type="submit" disabled={emailLoading || emailSaving || Boolean(emailLoadError)}>{emailSaving ? <><Loader2 className="size-4 animate-spin" />Guardando…</> : 'Guardar configuración'}</Btn></div>
+        </form>
+      </Card>
       <div className="flex gap-1 border-b border-line">
         {tabs.map(([k, l]) => <button key={k} onClick={() => setTab(k)} className={cx('-mb-px border-b-2 px-4 py-2.5 text-sm font-medium transition', tab === k ? 'border-brand text-brand' : 'border-transparent text-muted hover:text-ink')}>{l}</button>)}
       </div>
@@ -290,19 +358,19 @@ export function Alertas({ initialTab, toast }: { initialTab?: string; toast: Toa
         </Card>
       )}
 
-      {tab === 'monitoreo' && <Monitoreo />}
+      {tab === 'monitoreo' && <Monitoreo enabled={automaticEnabled} scheduledTime={scheduledTime} />}
     </div>
   )
 }
 
-function Monitoreo() {
+function Monitoreo({ enabled, scheduledTime }: { enabled: boolean; scheduledTime: string }) {
   const flow = ['Nueva fecha límite', 'Cálculo automático de días restantes', 'Actualización del estado', 'Evaluación de alertas', 'Envío de correo', 'Registro de notificación']
   return (
     <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1fr_1fr]">
       <Card>
-        <CardHeader title="Monitoreo automático" right={<span className="inline-flex items-center gap-1.5 rounded-full bg-[#e6f4ec] px-3 py-1 text-sm font-medium text-[#256b45]"><span className="size-2 rounded-full bg-[#3c9a67]" />Activo</span>} />
+        <CardHeader title="Monitoreo automático" right={<span className={cx("inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-medium", enabled ? "bg-[#e6f4ec] text-[#256b45]" : "bg-canvas text-muted")}>{enabled ? "Habilitado" : "Deshabilitado"}</span>} />
         <div className="p-5">
-          <p className="mb-5 text-sm text-muted">El sistema ejecuta este flujo todos los días, aunque nadie tenga la aplicación abierta.</p>
+          <p className="mb-5 text-sm text-muted">{enabled ? `El backend ejecuta el informe todos los días a las ${scheduledTime} (America/Santiago), aunque la web esté cerrada.` : "El proceso programado está deshabilitado en la configuración del backend."}</p>
           <ol>
             {flow.map((f, i) => (
               <li key={f}>

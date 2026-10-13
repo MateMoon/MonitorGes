@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
+    "email:test": "tsx scripts/email-test.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
@@ -21,10 +22,12 @@
     "dotenv": "^16.6.1",
     "exceljs": "^4.4.0",
     "fastify": "^5.6.2",
+    "nodemailer": "^10.1.0",
     "zod": "^4.1.11"
   },
   "devDependencies": {
     "@types/node": "^22.18.6",
+    "@types/nodemailer": "^8.0.2",
     "prisma": "^6.16.2",
     "tsx": "^4.20.6",
     "typescript": "^5.9.2",

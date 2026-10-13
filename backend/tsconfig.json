@@ -11,5 +11,5 @@
     "forceConsistentCasingInFileNames": true,
     "types": ["node", "vitest/globals"]
   },
-  "include": ["src/**/*.ts", "prisma/seed.ts", "test/**/*.ts"]
+  "include": ["src/**/*.ts", "scripts/**/*.ts", "prisma/seed.ts", "test/**/*.ts"]
 }

@@ -4,6 +4,7 @@ import { dashboardRoutes } from './modules/dashboard/routes.js';
 import { guaranteeRoutes } from './modules/garantias/routes.js';
 import multipart from '@fastify/multipart';
 import { importValidationRoutes } from './modules/importaciones/routes.js';
+import { notificationRoutes } from './modules/notificaciones/routes.js';
 
 export function buildApp() {
   const app = Fastify({ logger: true });
@@ -21,6 +22,7 @@ export function buildApp() {
   app.register(guaranteeRoutes, { prefix: '/api/garantias' });
   app.register(importValidationRoutes, { prefix: '/api/importaciones' });
   app.register(dashboardRoutes, { prefix: '/api/dashboard' });
+  app.register(notificationRoutes, { prefix: '/api/notificaciones' });
   app.setErrorHandler((error, request, reply) => {
     request.log.error(error);
     const statusCode = (error as { statusCode?: number }).statusCode ?? 500;

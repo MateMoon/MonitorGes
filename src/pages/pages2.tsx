@@ -237,7 +237,7 @@ function NotifBadge({ s }: { s: string }) {
   return <span className={cx('rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset', c)}>{s}</span>
 }
 
-export function Alertas({ initialTab, toast }: { initialTab?: string; toast: Toast }) {
+export function Alertas({ initialTab, toast, canEditEmail }: { initialTab?: string; toast: Toast; canEditEmail: boolean }) {
   const [tab, setTab] = useState(initialTab ?? 'config')
   const [days, setDays] = useState([true, true, true, true, true, false])
   const [resumen, setResumen] = useState(true)
@@ -306,7 +306,7 @@ export function Alertas({ initialTab, toast }: { initialTab?: string; toast: Toa
             <label htmlFor="notification-email" className="mb-1.5 block text-sm font-medium">Correo destinatario</label>
             <input id="notification-email" name="email" type="email" required maxLength={254} autoComplete="email" value={email}
               onChange={(event) => { setEmail(event.target.value); setEmailSaveError(null); setEmailSavedMessage(null) }}
-              disabled={emailLoading || emailSaving} placeholder="equipo@institucion.cl" className={cx(inputCls, 'max-w-xl')} />
+              disabled={!canEditEmail || emailLoading || emailSaving} placeholder="equipo@institucion.cl" className={cx(inputCls, 'max-w-xl')} />
             <p className="mt-1.5 text-xs text-muted">El informe contiene garantías y fechas límite; no incluye nombre, RUT ni diagnóstico de pacientes.</p>
           </div>
           {emailLoadError && <p role="alert" className="rounded-lg bg-[#fbe7e5] px-4 py-3 text-sm text-[#a12a22]">No fue posible cargar la configuración: {emailLoadError}</p>}
@@ -317,9 +317,10 @@ export function Alertas({ initialTab, toast }: { initialTab?: string; toast: Toa
             Envío automático {automaticEnabled ? `habilitado para las ${scheduledTime} (America/Santiago)` : 'deshabilitado en el backend'}.
             {automaticEnabled && ' Guardar una dirección no envía un correo inmediatamente.'}
           </p>
+          {!canEditEmail && <p className='text-xs text-muted'>Solo administradores pueden modificar el destinatario.</p>}
           {emailSaveError && <p role="alert" className="rounded-lg bg-[#fbe7e5] px-4 py-3 text-sm text-[#a12a22]">{emailSaveError}</p>}
           {emailSavedMessage && <p role="status" className="rounded-lg bg-[#e6f4ec] px-4 py-3 text-sm text-[#256b45]">{emailSavedMessage}</p>}
-          <div className="flex justify-end"><Btn variant="primary" type="submit" disabled={emailLoading || emailSaving || Boolean(emailLoadError)}>{emailSaving ? <><Loader2 className="size-4 animate-spin" />Guardando…</> : 'Guardar configuración'}</Btn></div>
+          <div className="flex justify-end"><Btn variant="primary" type="submit" disabled={!canEditEmail || emailLoading || emailSaving || Boolean(emailLoadError)}>{emailSaving ? <><Loader2 className="size-4 animate-spin" />Guardando…</> : 'Guardar configuración'}</Btn></div>
         </form>
       </Card>
       <div className="flex gap-1 border-b border-line">

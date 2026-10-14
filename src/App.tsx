@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { getCurrentUser, logout, type AuthUser } from './services/auth'
 import { Bell, CheckCircle2, History, LayoutDashboard, ListChecks, LogOut, Settings, Siren, Upload } from 'lucide-react'
 import type { Status } from './data'
 import { Alertas, Configuracion, Historial, Importar } from './pages/pages2'
@@ -17,7 +18,9 @@ const MENU: { id: Page; label: string; icon: typeof Bell; title: string }[] = [
 ]
 
 export default function App() {
-  const [user, setUser] = useState<string | null>(null)
+  const [user, setUser] = useState<AuthUser | null>(null)
+  const [authReady, setAuthReady] = useState(false)
+  useEffect(() => { getCurrentUser().then(setUser).catch(() => setUser(null)).finally(() => setAuthReady(true)) }, [])
   const [page, setPage] = useState<Page>('dashboard')
   const [sel, setSel] = useState<string | number>(1)
   const [preset, setPreset] = useState<Status[] | undefined>()
@@ -28,6 +31,7 @@ export default function App() {
   const [bell, setBell] = useState(false)
 
   const toast = (m: string) => { setToastMsg(m); setTimeout(() => setToastMsg(null), 2600) }
+  const closeSession = async () => { try { await logout(); setUser(null); setGest(new Set()) } catch { toast('No fue posible cerrar la sesión con el servidor. Intente nuevamente.') } }
   const nav: Nav = (p, o) => {
     // Estadísticas permanece bloqueada mientras está temporalmente deshabilitada.
     if (p === 'estadisticas') return
@@ -42,7 +46,8 @@ export default function App() {
     setGest(n)
   }
 
-  if (!user) return <Login onLogin={(u) => { setUser(u); nav('dashboard') }} />
+  if (!authReady) return <div className='grid min-h-screen place-items-center text-sm text-muted'>Verificando sesión…</div>
+  if (!user) return <Login onLogin={(authenticatedUser) => { setUser(authenticatedUser); nav('dashboard') }} />
 
   const active = page === 'detalle' ? 'garantias' : page
   const title = page === 'detalle' ? 'Detalle de garantía' : MENU.find((m) => m.id === page)!.title
@@ -64,10 +69,10 @@ export default function App() {
         </nav>
         <div className="border-t border-white/10 p-3">
           <div className="flex items-center gap-3 rounded-lg px-2 py-2">
-            <span className="grid size-9 shrink-0 place-items-center rounded-full bg-white/15 text-sm font-semibold uppercase">{user.slice(0, 2)}</span>
-            <div className="hidden min-w-0 leading-tight lg:block"><p className="truncate text-sm font-medium">{user}</p><p className="text-xs text-white/55">Administrador</p></div>
+            <span className="grid size-9 shrink-0 place-items-center rounded-full bg-white/15 text-sm font-semibold uppercase">{user.nombre.slice(0, 2)}</span>
+            <div className="hidden min-w-0 leading-tight lg:block"><p className="truncate text-sm font-medium">{user.nombre}</p><p className="text-xs text-white/55">{user.rol === 'ADMIN' ? 'Administrador' : user.rol === 'PROFESIONAL' ? 'Profesional' : 'Lector'}</p></div>
           </div>
-          <button onClick={() => { setUser(null); setGest(new Set()) }} title="Cerrar sesión" className="mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-white/65 hover:bg-white/8 hover:text-white">
+          <button onClick={() => { void closeSession() }} title="Cerrar sesión" className="mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-white/65 hover:bg-white/8 hover:text-white">
             <LogOut className="size-[18px]" /><span className="hidden lg:block">Cerrar sesión</span>
           </button>
         </div>
@@ -92,7 +97,7 @@ export default function App() {
                 </div>
               )}
             </div>
-            <div className="flex items-center gap-2.5 border-l border-line pl-5"><span className="grid size-8 place-items-center rounded-full bg-brand-soft text-xs font-semibold uppercase text-brand">{user.slice(0, 2)}</span><span className="hidden text-sm font-medium md:block">{user}</span></div>
+            <div className="flex items-center gap-2.5 border-l border-line pl-5"><span className="grid size-8 place-items-center rounded-full bg-brand-soft text-xs font-semibold uppercase text-brand">{user.nombre.slice(0, 2)}</span><span className="hidden text-sm font-medium md:block">{user.nombre}</span></div>
           </div>
         </header>
 
@@ -102,7 +107,7 @@ export default function App() {
           {page === 'detalle' && <Detalle id={sel} nav={nav} gestionadas={gest} onGestionar={gestionar} />}
           {page === 'importar' && <Importar nav={nav} toast={toast} />}
           {page === 'historial' && <Historial />}
-          {page === 'alertas' && <Alertas initialTab={tab} toast={toast} />}
+          {page === 'alertas' && <Alertas initialTab={tab} toast={toast} canEditEmail={user.rol === 'ADMIN'} />}
           {/* Estadísticas sigue temporalmente deshabilitada.
           {page === 'estadisticas' && <Estadisticas />}
           */}

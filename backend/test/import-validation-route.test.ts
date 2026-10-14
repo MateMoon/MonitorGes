@@ -1,5 +1,5 @@
 ﻿import ExcelJS from "exceljs";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const db = vi.hoisted(() => ({ read: vi.fn(), write: vi.fn() }));
 vi.mock("../src/db/prisma.js", () => ({
@@ -11,6 +11,8 @@ vi.mock("../src/db/prisma.js", () => ({
   },
 }));
 import { buildApp } from "../src/app.js";
+const authMocks = vi.hoisted(() => ({ getSessionUser: vi.fn() }));
+vi.mock("../src/modules/auth/auth-service.js", () => ({ getSessionUser: authMocks.getSessionUser }));
 
 async function sampleXlsx() {
   const workbook = new ExcelJS.Workbook();
@@ -32,12 +34,13 @@ function multipart(file: Buffer) {
 
 describe("POST /api/importaciones/validar", () => {
   const app = buildApp();
+  beforeEach(() => authMocks.getSessionUser.mockResolvedValue({ id: "user-1", username: "qa", nombre: "QA", email: "qa@example.test", rol: "PROFESIONAL" }));
   beforeAll(async () => { await app.ready(); });
   afterAll(async () => { await app.close(); });
 
   it("devuelve el resumen y la vista previa, sin modificar PostgreSQL", async () => {
     const form = multipart(await sampleXlsx());
-    const response = await app.inject({ method: "POST", url: "/api/importaciones/validar", headers: { "content-type": form.contentType }, payload: form.body });
+    const response = await app.inject({ method: "POST", url: "/api/importaciones/validar", headers: { "content-type": form.contentType, origin: "http://localhost:8443", cookie: "ges_session=professional" }, payload: form.body });
     expect(response.statusCode).toBe(200);
     expect(response.json().data).toMatchObject({ filasLeidas: 1, filasValidas: 1, filasConErrores: 0, vistaPrevia: [expect.objectContaining({ nombre: "Paciente Prueba" })] });
     expect(db.read).not.toHaveBeenCalled();
@@ -45,8 +48,15 @@ describe("POST /api/importaciones/validar", () => {
   });
 
   it("devuelve error legible si falta el campo archivo", async () => {
-    const response = await app.inject({ method: "POST", url: "/api/importaciones/validar", headers: { "content-type": "multipart/form-data; boundary=empty" }, payload: "--empty--\r\n" });
+    const response = await app.inject({ method: "POST", url: "/api/importaciones/validar", headers: { "content-type": "multipart/form-data; boundary=empty", origin: "http://localhost:8443", cookie: "ges_session=professional" }, payload: "--empty--\r\n" });
     expect(response.statusCode).toBe(400);
     expect(response.json().error.code).toBe("FILE_REQUIRED");
+  });
+  it("requiere PROFESIONAL o ADMIN antes de validar o importar", async () => {
+    const anonymous = await app.inject({ method: "POST", url: "/api/importaciones/validar", headers: { origin: "http://localhost:8443" } });
+    expect(anonymous.statusCode).toBe(401);
+    authMocks.getSessionUser.mockResolvedValueOnce({ id: "reader", username: "reader", nombre: "Reader", email: "reader@example.test", rol: "LECTOR" });
+    const reader = await app.inject({ method: "POST", url: "/api/importaciones", headers: { origin: "http://localhost:8443", cookie: "ges_session=reader" } });
+    expect(reader.statusCode).toBe(403);
   });
 });

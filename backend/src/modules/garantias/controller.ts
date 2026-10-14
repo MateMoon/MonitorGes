@@ -1,11 +1,15 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
-import { getGuarantee, getGuarantees } from "./service.js";
+import { getGuarantee, getGuarantees, getGuaranteeFilterOptions } from "./service.js";
 import { listQuerySchema } from "./schema.js";
 
 export async function listController(request: FastifyRequest, reply: FastifyReply) {
   const parsed = listQuerySchema.safeParse(request.query);
   if (!parsed.success) return reply.code(400).send({ error: { code: "VALIDATION_ERROR", message: "Parámetros inválidos", details: parsed.error.issues }, requestId: request.id });
   return getGuarantees(parsed.data);
+}
+
+export async function filterOptionsController() {
+  return { data: await getGuaranteeFilterOptions() };
 }
 
 export async function detailController(request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {

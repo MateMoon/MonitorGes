@@ -10,6 +10,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "email:test": "tsx scripts/email-test.ts",
+    "auth:bootstrap-admin": "tsx scripts/bootstrap-admin.ts",
+    "auth:provision-user": "tsx scripts/provision-user.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",

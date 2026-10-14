@@ -1,5 +1,5 @@
 import { dateToCivil, todayInTimeZone } from "../../utils/dates.js";
-import { findGuarantee, listGuarantees } from "./repository.js";
+import { findGuarantee, listGuarantees, listGuaranteeFilterOptions } from "./repository.js";
 import { getDaysRemaining, getGuaranteeStatus } from "./status.js";
 
 export function serializeGuarantee(row: any, today: string) {
@@ -19,3 +19,5 @@ export async function getGuarantee(id: string) {
   const row = await findGuarantee(id);
   return row ? serializeGuarantee(row, today) : null;
 }
+
+export const getGuaranteeFilterOptions = () => listGuaranteeFilterOptions();

@@ -3,6 +3,7 @@ import { MAX_FILE_SIZE, WorkbookInputError, validateWorkbook } from "./validatio
 import { importWorkbook } from "./import-service.js";
 import { importHistoryQuerySchema } from "./schema.js";
 import { listImports } from "./repository.js";
+import { requireAuthenticated, requireRoles } from "../auth/routes.js";
 
 async function uploadedFile(request: FastifyRequest) {
   const file = await request.file();
@@ -24,13 +25,13 @@ function uploadError(error: unknown, reply: FastifyReply, request: FastifyReques
 }
 
 export async function importValidationRoutes(app: FastifyInstance) {
-  app.get("/", async (request, reply) => {
+  app.get("/", { preHandler: requireAuthenticated }, async (request, reply) => {
     const parsed = importHistoryQuerySchema.safeParse(request.query);
     if (!parsed.success) return reply.code(400).send({ error: { code: "VALIDATION_ERROR", message: "Parámetros de paginación inválidos.", details: parsed.error.issues } });
     return { ...(await listImports(parsed.data)) };
   });
 
-  app.post("/validar", async (request, reply) => {
+  app.post("/validar", { preHandler: requireRoles("ADMIN", "PROFESIONAL") }, async (request, reply) => {
     try {
       const { buffer, filename } = await uploadedFile(request);
       return reply.code(200).send({ data: await validateWorkbook(buffer, filename) });
@@ -39,7 +40,7 @@ export async function importValidationRoutes(app: FastifyInstance) {
     }
   });
 
-  app.post("/", async (request, reply) => {
+  app.post("/", { preHandler: requireRoles("ADMIN", "PROFESIONAL") }, async (request, reply) => {
     try {
       const { buffer, filename } = await uploadedFile(request);
       return reply.code(201).send({ data: await importWorkbook(buffer, filename) });

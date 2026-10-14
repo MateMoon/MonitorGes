@@ -57,6 +57,8 @@ vi.mock("../src/modules/dashboard/repository.js", () => ({
   dashboardData: vi.fn(async () => ({ total: memory.guarantees.length, conteosPorEstado: { vencida: 0, critica: 0, proxima: 0, atencion: 0, normal: memory.guarantees.length }, urgentes: [] })),
   latestImport: vi.fn(async () => [...memory.imports].sort((a, b) => b.fechaImportacion.getTime() - a.fechaImportacion.getTime())[0] ?? null),
 }));
+const authMocks = vi.hoisted(() => ({ getSessionUser: vi.fn() }));
+vi.mock("../src/modules/auth/auth-service.js", () => ({ getSessionUser: authMocks.getSessionUser }));
 import { importWorkbook } from "../src/modules/importaciones/import-service.js";
 import { buildApp } from "../src/app.js";
 
@@ -90,6 +92,7 @@ function seededGuarantee(patientId: string, changes: Record<string, unknown> = {
 }
 
 beforeEach(() => {
+  authMocks.getSessionUser.mockResolvedValue({ id: "professional-1", username: "profesional", nombre: "Profesional QA", email: "qa@example.test", rol: "PROFESIONAL" });
   memory.patients.splice(0); memory.guarantees.splice(0); memory.imports.splice(0); memory.errors.splice(0);
   memory.nextId = 1; memory.failGuaranteeCreate = false;
 });
@@ -100,20 +103,20 @@ describe("importación persistente", () => {
   afterAll(async () => { await app.close(); });
   it("publica los cambios importados en Garantías, Dashboard e Historial mediante sus APIs", async () => {
     const form = multipart(await makeXlsx([baseRow]));
-    const imported = await app.inject({ method: "POST", url: "/api/importaciones", headers: { "content-type": form.contentType }, payload: form.body });
+    const imported = await app.inject({ method: "POST", url: "/api/importaciones", headers: { "content-type": form.contentType, origin: "http://localhost:8443", cookie: "ges_session=professional" }, payload: form.body });
     expect(imported.statusCode).toBe(201);
     const importData = imported.json().data;
     expect(importData).toMatchObject({ estado: "COMPLETADA", registrosNuevos: 1, registrosConError: 0 });
 
-    const guarantees = await app.inject({ method: "GET", url: "/api/garantias" });
+    const guarantees = await app.inject({ method: "GET", url: "/api/garantias", headers: { cookie: "ges_session=professional" } });
     expect(guarantees.statusCode).toBe(200);
     expect(guarantees.json()).toMatchObject({ pagination: { total: 1 }, data: [expect.objectContaining({ paciente: expect.objectContaining({ rut: "12345678-5", nombre: "Paciente Ficticio" }), nombreGarantia: "Garantía A" })] });
 
-    const dashboard = await app.inject({ method: "GET", url: "/api/dashboard" });
+    const dashboard = await app.inject({ method: "GET", url: "/api/dashboard", headers: { cookie: "ges_session=professional" } });
     expect(dashboard.statusCode).toBe(200);
     expect(dashboard.json().data).toMatchObject({ total: 1, ultimaImportacion: { id: importData.id, nombreArchivo: "nomina.xlsx" } });
 
-    const history = await app.inject({ method: "GET", url: "/api/importaciones?page=1&limit=25" });
+    const history = await app.inject({ method: "GET", url: "/api/importaciones?page=1&limit=25", headers: { cookie: "ges_session=professional" } });
     expect(history.statusCode).toBe(200);
     expect(history.json()).toMatchObject({ data: [expect.objectContaining({ id: importData.id, nombreArchivo: "nomina.xlsx", registrosNuevos: 1 })], pagination: { total: 1, page: 1, limit: 25 } });
   });

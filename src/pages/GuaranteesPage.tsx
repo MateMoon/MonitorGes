@@ -1,7 +1,7 @@
 ﻿import { useEffect, useState } from 'react';
 import { AlertCircle, ArrowLeft, CheckCircle2, ChevronLeft, ChevronRight, Eye, Loader2, Search, X } from 'lucide-react';
 import { STATUS, type Status, fmt, rutFull } from '../data';
-import { getGarantias, getGarantiaById } from '../services/garantias';
+import { getGarantias, getGarantiaById, getGarantiaFilterOptions } from '../services/garantias';
 import type { Garantia } from '../types';
 import { Btn, Card, CardHeader, Days, Empty, StatusBadge, Th, cx, inputCls, tdCls } from '../ui';
 import type { Nav } from './pages1';
@@ -14,6 +14,7 @@ export function Garantias({ nav, initial, gestionadas }: { nav: Nav; initial?: S
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [rows, setRows] = useState<Garantia[]>([]);
+  const [filterOptions, setFilterOptions] = useState({ responsables: [] as string[], problemasSalud: [] as string[], nombresGarantia: [] as string[] });
   const [pagination, setPagination] = useState({ page: 1, limit: PAGE_SIZE, total: 0, totalPages: 0 });
   const [q, setQ] = useState('');
   const [estados, setEstados] = useState<Set<Status>>(new Set(initial ?? DEFAULT_STATES));
@@ -26,6 +27,14 @@ export function Garantias({ nav, initial, gestionadas }: { nav: Nav; initial?: S
   const [asc, setAsc] = useState(true);
   const [reload, setReload] = useState(0);
   const estadosKey = [...estados].sort().join(',');
+
+  useEffect(() => {
+    const controller = new AbortController();
+    getGarantiaFilterOptions(controller.signal).then(setFilterOptions).catch(() => {
+      if (!controller.signal.aborted) setFilterOptions({ responsables: [], problemasSalud: [], nombresGarantia: [] });
+    });
+    return () => controller.abort();
+  }, []);
 
   useEffect(() => setPage(1), [q, estadosKey, resp, prob, nombreGarantia, fechaDesde, fechaHasta]);
 
@@ -90,9 +99,15 @@ export function Garantias({ nav, initial, gestionadas }: { nav: Nav; initial?: S
             {estadoSel === 'varios' && <option value="varios">Estado: selección</option>}
             {CHIP_ORDER.map((status) => <option key={status} value={status}>{STATUS[status].label}</option>)}
           </select>
-          <input className={inputCls} placeholder="Responsable" aria-label="Filtrar por responsable" value={resp} onChange={(event) => setResp(event.target.value)} />
-          <input className={inputCls} placeholder="Problema de salud" aria-label="Filtrar por problema de salud" value={prob} onChange={(event) => setProb(event.target.value)} />
-          <input className={inputCls} placeholder="Nombre de garantía" aria-label="Filtrar por nombre de garantía" value={nombreGarantia} onChange={(event) => setNombreGarantia(event.target.value)} />
+          <select className={inputCls} aria-label="Filtrar por responsable" value={resp} onChange={(event) => setResp(event.target.value)}>
+            <option value="">Responsable: todos</option>{filterOptions.responsables.map((option) => <option key={option} value={option}>{option}</option>)}
+          </select>
+          <select className={inputCls} aria-label="Filtrar por problema de salud" value={prob} onChange={(event) => setProb(event.target.value)}>
+            <option value="">Problema de salud: todos</option>{filterOptions.problemasSalud.map((option) => <option key={option} value={option}>{option}</option>)}
+          </select>
+          <select className={inputCls} aria-label="Filtrar por nombre de garantía" value={nombreGarantia} onChange={(event) => setNombreGarantia(event.target.value)}>
+            <option value="">Garantía: todas</option>{filterOptions.nombresGarantia.map((option) => <option key={option} value={option}>{option}</option>)}
+          </select>
           <div className="flex gap-2">
             <input className={cx(inputCls, 'min-w-0')} type="date" aria-label="Fecha límite desde" title="Fecha límite desde" value={fechaDesde} onChange={(event) => setFechaDesde(event.target.value)} />
             <input className={cx(inputCls, 'min-w-0')} type="date" aria-label="Fecha límite hasta" title="Fecha límite hasta" value={fechaHasta} onChange={(event) => setFechaHasta(event.target.value)} />

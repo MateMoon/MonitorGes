@@ -43,7 +43,7 @@ Los tests de integración de rutas necesitan que `DATABASE_URL` apunte a una bas
 
 ## API disponible
 
-- `GET /api/notificaciones/configuracion-correo` y `PUT /api/notificaciones/configuracion-correo`: consulta y guarda el destinatario del informe automático en PostgreSQL; el correo se valida en el backend. El endpoint de escritura no tiene autenticación/autorización todavía.
+- GET /api/notificaciones/configuracion-correo: requiere sesion valida. PUT /api/notificaciones/configuracion-correo: requiere sesion valida y rol ADMIN.
 - `GET /api/garantias`: lista paginada (`page`, `limit`, máximo 100), con filtros `rut`, `nombre`, `estado` (CSV o repetido), `responsable`, `problemaSalud`, `nombreGarantia`, `fechaLimiteDesde` y `fechaLimiteHasta`. Orden permitido: `fechaLimite`, `fechaInicio`, `nombreGarantia`, `responsable`, `createdAt`; `order=asc|desc`.
 - `GET /api/garantias/:id`: detalle de garantía, paciente y gestión. UUID inválido produce 400; inexistente, 404.
 - `GET /api/dashboard`: total, conteos por estado, hasta ocho garantías urgentes y última importación.
@@ -95,7 +95,7 @@ El script muestra códigos/operaciones de transporte cuando están disponibles, 
 
 La interfaz consulta y actualiza `GET /api/notificaciones/configuracion-correo` y `PUT /api/notificaciones/configuracion-correo` con `{ "email": "qa@example.test" }`. La dirección se valida, normaliza en minúsculas y persiste en la fila singleton `ConfiguracionNotificaciones` (`id=global`). No hay inicialización desde `EMAIL_REPORT_TO`: al instalar la migración el destinatario queda vacío, y el programador no envía nada hasta que exista una dirección válida guardada. Guardar no envía un correo.
 
-El backend no tiene autenticación ni autorización de usuarios. El endpoint `PUT` por ahora no está protegido; CORS limita navegadores de otros orígenes, pero no sustituye autenticación. Despliega la API solo en una red confiable o detrás de una capa de autenticación antes de permitir acceso no confiable.
+La autenticacion de servidor se describe en la seccion siguiente. Las rutas privadas ya exigen una sesion y los permisos se validan en Fastify.
 
 La reserva del informe es única por fecha `America/Santiago` y guarda el destinatario utilizado. El destinatario se lee de PostgreSQL al iniciar cada ejecución y queda fijado en la reserva. Si se cambia la dirección después de que ese día ya se reservó un informe, no se manda un segundo correo a la nueva dirección ese mismo día. Si el intento anterior falló y el destinatario no cambió, se reintenta cada cinco minutos; si cambió, los reintentos del día se detienen y la nueva dirección se usa desde la próxima fecha programada. Si el campo está vacío, la ejecución se omite y el programador vuelve a comprobarlo en cinco minutos. Así el cambio desde Alertas no dispara envíos accidentales.
 
@@ -156,3 +156,49 @@ Los logs de Fastify indican arranque, fecha procesada, conteos y códigos/operac
 El programador solo funciona mientras el proceso backend esté activo; cerrar la ventana o detener Node detiene los envíos. En Windows, ejecuta el backend en una consola persistente para desarrollo. Para operación continua, se recomienda instalarlo como servicio de Windows mediante **NSSM** (o un administrador de servicios equivalente), configurando `node.exe` con argumentos `dist/server.js`, el directorio de trabajo `backend`, el usuario de servicio adecuado y reinicio ante fallos. Como alternativa integrada, configura el Programador de tareas para ejecutarse al iniciar el equipo, con “Reiniciar la tarea si se produce un error”, inicio en el directorio `backend` y comando `npm run start`; asegúrate de que PostgreSQL esté disponible y que el proceso reciba el `.env` correcto. No se garantiza el envío mientras el equipo/backend esté apagado.
 
 Para detener la automatización sin cambiar código, configura `AUTO_EMAIL_ENABLED=false` y reinicia el backend. Mantén `.env` fuera del control de versiones y protege el acceso a la tabla de envíos, ya que contiene destinatarios y metadatos operativos.
+
+## Autenticacion, roles y preparacion QA
+
+La API usa sesiones opacas persistidas en PostgreSQL. El navegador recibe una cookie ges_session con HttpOnly, SameSite=Strict, Path=/api y una expiracion de ocho horas. Solo el hash SHA-256 del token aleatorio se guarda en la tabla de sesiones. Las contrasenas se derivan con scrypt (N=16384, r=8, p=1, sal aleatoria de 16 bytes y clave de 64 bytes); nunca se almacenan en texto plano. Las respuestas de login son genericas para cuentas inexistentes, inactivas o contrasenas incorrectas. Se limitan a cinco fallos por combinacion usuario/IP y a 30 fallos por IP en 15 minutos; el bloqueo dura 15 minutos. El limitador vive en memoria y requiere una sola instancia del backend.
+
+| Rol | Permisos |
+| --- | --- |
+| ADMIN | Leer garantias, dashboard, historial y configuracion de correo; validar e importar nominas; modificar el destinatario global del correo. |
+| PROFESIONAL | Leer garantias, dashboard e historial; validar e importar nominas; leer la configuracion global del correo. |
+| LECTOR | Leer garantias, dashboard, historial, opciones de filtros y configuracion del correo. No puede importar ni modificar la configuracion. |
+
+Las rutas /api/garantias (incluidas opciones de filtros), /api/dashboard, /api/importaciones y /api/notificaciones/configuracion-correo requieren sesion para lectura. POST /api/importaciones y /validar exigen ADMIN o PROFESIONAL; PUT /api/notificaciones/configuracion-correo exige ADMIN. Sin sesion, Fastify responde 401; con sesion pero sin permiso, 403. /api/auth/login inicia sesion, /api/auth/me devuelve identidad y rol y /api/auth/logout revoca la sesion actual. No hay registro publico ni contrasena predeterminada.
+
+El login y la cookie funcionan en el navegador entre los puertos actuales porque son mismo sitio. CORS_ORIGINS debe enumerar el origen exacto del frontend; solicitudes que cambian datos requieren un Origin permitido, y CORS usa credenciales. En desarrollo el valor de ejemplo es http://localhost:8443. En produccion el backend agrega Secure a la cookie cuando NODE_ENV=production, por lo que debe servirse bajo HTTPS. Para evitar problemas de cookies SameSite=Strict, publica frontend y API bajo el mismo sitio (preferentemente detras de un reverse proxy). No expongas el puerto del backend directamente a redes no confiables.
+
+### Crear el primer administrador y aprovisionar cuentas
+
+No se crea ningun administrador automaticamente. Primero aplica las migraciones solo a una base QA separada y genera el cliente Prisma. Desde backend en PowerShell, confirma que la URL contiene el nombre QA esperado antes de ejecutar cualquier migracion:
+
+~~~powershell
+$qaDatabaseUrl = Read-Host "DATABASE_URL de QA"
+if ($qaDatabaseUrl -notmatch '/monitor_garantias_qa(?:\?|$)') { throw "La URL no apunta a monitor_garantias_qa" }
+$env:DATABASE_URL = $qaDatabaseUrl
+try {
+  npm.cmd run prisma:deploy
+  if ($LASTEXITCODE -ne 0) { throw "prisma:deploy fallo" }
+  npm.cmd run prisma:generate
+  if ($LASTEXITCODE -ne 0) { throw "prisma:generate fallo" }
+  npm.cmd run auth:bootstrap-admin
+  if ($LASTEXITCODE -ne 0) { throw "No se pudo crear el administrador inicial" }
+} finally {
+  Remove-Item Env:DATABASE_URL
+}
+~~~
+
+auth:bootstrap-admin solicita usuario, nombre, correo y una contrasena nueva (minimo 14 caracteres, entrada sin eco en una terminal). Crea o habilita el primer administrador y se niega a ejecutarse si ya hay un administrador con credenciales. No incluyas contrasenas en comandos, archivos ni variables persistentes. Para crear cuentas PROFESIONAL o LECTOR despues del bootstrap, ejecuta npm.cmd run auth:provision-user; requiere un administrador activo en la base, no permite crear administradores y revoca las sesiones del usuario cuando restablece una cuenta existente. No ejecutes estos comandos contra la base actual ni la base productiva sin un procedimiento de cambio aprobado.
+
+Las migraciones nuevas agregan Usuario.passwordHash nullable (las cuentas existentes quedan sin poder autenticarse hasta aprovisionarlas) y la tabla SesionUsuario, con hash unico de token, expiracion e indice de usuario. La migracion 20261014100000_server_authentication esta pendiente y no fue aplicada. Despues de validar QA, planifica respaldo, ventana y aprobacion antes de desplegar las migraciones a otra base. Mantener AUTO_EMAIL_ENABLED=false es independiente de la autenticacion y no debe cambiarse como parte de este procedimiento.
+
+### Pruebas de filtros combobox
+
+Las opciones se consultan desde PostgreSQL y se deduplican por mayusculas/minusculas en la API; se conserva una grafia representativa por valor. Los tres filtros usan equals con modo insensitive, no contains; filtros combinados se agregan al mismo where sin alterar la paginacion ni el orden solicitados. Las pruebas cubren la normalizacion, igualdad exacta y combinacion. Las pruebas de rutas usan usuarios de sesion ficticios en los mocks y no sustituyen una prueba de integracion contra una base QA migrada.
+
+### Limitaciones operacionales pendientes
+
+El bloqueo por intentos reside en memoria: reiniciar el proceso lo reinicia y varias instancias no comparten el contador. Para escalar, moverlo a Redis o almacenamiento central con expiracion. No hay interfaz administrativa para gestionar roles; el aprovisionamiento se hace desde una consola con acceso seguro a la base. La aplicacion de migraciones, la validacion funcional con PostgreSQL QA, la configuracion HTTPS/CORS del despliegue y una revision de seguridad operacional siguen pendientes. Las pruebas no certifican el sistema para produccion.

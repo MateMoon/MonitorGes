@@ -44,6 +44,17 @@ interface ListaApi {
 
 interface DetalleApi { data: GarantiaApi }
 
+export interface GarantiaFilterOptions {
+  responsables: string[];
+  problemasSalud: string[];
+  nombresGarantia: string[];
+}
+
+export async function getGarantiaFilterOptions(signal?: AbortSignal): Promise<GarantiaFilterOptions> {
+  const result = await apiRequest<{ data: GarantiaFilterOptions }>(`/api/garantias/opciones-filtros`, { signal });
+  return result.data;
+}
+
 function civilDateToLocalDate(value: string): Date {
   const [year, month, day] = value.slice(0, 10).split('-').map(Number);
   return new Date(year, month - 1, day);

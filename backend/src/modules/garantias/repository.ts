@@ -24,9 +24,9 @@ export async function listGuarantees(query: ListQuery, currentDate: string) {
   if (query.nombre) patientFilters.push({ nombre: { contains: query.nombre, mode: "insensitive" } });
   const where: Prisma.GarantiaWhereInput = {
     ...(patientFilters.length ? { paciente: { AND: patientFilters } } : {}),
-    ...(query.responsable ? { responsable: { contains: query.responsable, mode: "insensitive" } } : {}),
-    ...(query.problemaSalud ? { problemaSalud: { contains: query.problemaSalud, mode: "insensitive" } } : {}),
-    ...(query.nombreGarantia ? { nombreGarantia: { contains: query.nombreGarantia, mode: "insensitive" } } : {}),
+    ...(query.responsable ? { responsable: { equals: query.responsable, mode: "insensitive" } } : {}),
+    ...(query.problemaSalud ? { problemaSalud: { equals: query.problemaSalud, mode: "insensitive" } } : {}),
+    ...(query.nombreGarantia ? { nombreGarantia: { equals: query.nombreGarantia, mode: "insensitive" } } : {}),
     ...(query.fechaLimiteDesde || query.fechaLimiteHasta ? { fechaLimite: { ...(query.fechaLimiteDesde ? { gte: new Date(`${query.fechaLimiteDesde}T00:00:00.000Z`) } : {}), ...(query.fechaLimiteHasta ? { lte: new Date(`${query.fechaLimiteHasta}T00:00:00.000Z`) } : {}) } } : {}),
     ...(states.length ? { OR: states.map((state) => ranges[state]) } : {}),
   };
@@ -38,3 +38,24 @@ export async function listGuarantees(query: ListQuery, currentDate: string) {
 }
 
 export const findGuarantee = (id: string) => prisma.garantia.findUnique({ where: { id }, include: { paciente: true, gestionadaPor: { select: { id: true, nombre: true } } } });
+
+export async function listGuaranteeFilterOptions() {
+  const [responsables, problemasSalud, nombresGarantia] = await Promise.all([
+    prisma.garantia.findMany({ distinct: ["responsable"], select: { responsable: true }, orderBy: { responsable: "asc" } }),
+    prisma.garantia.findMany({ distinct: ["problemaSalud"], select: { problemaSalud: true }, orderBy: { problemaSalud: "asc" } }),
+    prisma.garantia.findMany({ distinct: ["nombreGarantia"], select: { nombreGarantia: true }, orderBy: { nombreGarantia: "asc" } }),
+  ]);
+  const uniqueCaseInsensitive = (values: string[]) => {
+    const unique = new Map<string, string>();
+    for (const value of values.filter(Boolean)) {
+      const key = value.normalize("NFC").toLocaleLowerCase("es-CL");
+      if (!unique.has(key)) unique.set(key, value);
+    }
+    return [...unique.values()].sort((a, b) => a.localeCompare(b, "es-CL", { sensitivity: "base" }));
+  };
+  return {
+    responsables: uniqueCaseInsensitive(responsables.map(({ responsable }) => responsable)),
+    problemasSalud: uniqueCaseInsensitive(problemasSalud.map(({ problemaSalud }) => problemaSalud)),
+    nombresGarantia: uniqueCaseInsensitive(nombresGarantia.map(({ nombreGarantia }) => nombreGarantia)),
+  };
+}

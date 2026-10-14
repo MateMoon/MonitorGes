@@ -3,10 +3,11 @@ import {
   AlertCircle, ArrowLeft, ArrowRight, Bot, CheckCircle2, ChevronLeft, ChevronRight, Clock, Eye, FileSpreadsheet, Loader2, Lock, Mail, RefreshCw, Search, ShieldCheck, User, X, CircleSlash, Timer,
 } from 'lucide-react'
 import { STATUS, STATUS_ORDER, fmt, rutFull, type Status } from '../data'
+import { login as authenticate, type AuthUser } from '../services/auth'
 
 import { getDashboard } from '../services/dashboard'
 import type { Garantia } from '../types'
-import { Btn, Card, CardHeader, Check2, Days, Empty, StatusBadge, Th, cx, inputCls, tdCls } from '../ui'
+import { Btn, Card, CardHeader, Days, Empty, StatusBadge, Th, cx, inputCls, tdCls } from '../ui'
 
 export type Page = 'dashboard' | 'garantias' | 'detalle' | 'importar' | 'historial' | 'alertas' | 'estadisticas' | 'configuracion'
 export type Nav = (p: Page, o?: { id?: string | number; estados?: Status[]; tab?: string }) => void
@@ -20,77 +21,40 @@ export function Logo({ light, size = 36 }: { light?: boolean; size?: number }) {
 }
 
 /* ---------------- LOGIN ---------------- */
-export function Login({ onLogin }: { onLogin: (u: string) => void }) {
+export function Login({ onLogin }: { onLogin: (user: AuthUser) => void }) {
   const [u, setU] = useState('')
   const [p, setP] = useState('')
-  const [rem, setRem] = useState(true)
-  const [err, setErr] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setErr(false)
+    setError(null)
     setLoading(true)
-    setTimeout(() => {
-      setLoading(false)
-      if (u.trim() && p === 'ges2026') onLogin(u.trim())
-      else setErr(true)
-    }, 700)
+    try { onLogin(await authenticate(u.trim(), p)) }
+    catch (cause) { setError(cause instanceof Error ? cause.message : 'No fue posible iniciar sesión.') }
+    finally { setLoading(false) }
   }
 
   return (
     <div className="grid min-h-screen grid-cols-1 lg:grid-cols-[1.1fr_1fr]">
       <div className="relative hidden overflow-hidden bg-brand-dark p-12 text-white lg:flex lg:flex-col lg:justify-between">
         <div className="absolute inset-0 opacity-[0.07]" style={{ backgroundImage: 'linear-gradient(#fff 1px,transparent 1px),linear-gradient(90deg,#fff 1px,transparent 1px)', backgroundSize: '44px 44px' }} />
-        <div className="relative flex items-center gap-3">
-          <Logo light size={40} />
-          <div className="leading-tight">
-            <p className="text-sm font-semibold">Servicio de Salud Demo</p>
-            <p className="text-xs text-white/60">Unidad de Gestión GES</p>
-          </div>
-        </div>
-        <div className="relative max-w-md">
-          <h2 className="text-3xl font-semibold leading-snug">Seguimiento operacional de garantías explícitas en salud.</h2>
-          <p className="mt-4 text-white/70">Identifique qué casos requieren atención, conozca sus fechas límite y deje que el sistema revise y avise por usted.</p>
-          <div className="mt-8 flex gap-2">
-            {STATUS_ORDER.map((s) => <span key={s} className={cx('h-1.5 w-12 rounded-full', STATUS[s].dot)} />)}
-          </div>
-        </div>
-        <p className="relative text-xs text-white/50">Versión de demostración · datos ficticios</p>
+        <div className="relative flex items-center gap-3"><Logo light size={40} /><div className="leading-tight"><p className="text-sm font-semibold">Servicio de Salud</p><p className="text-xs text-white/60">Unidad de Gestión GES</p></div></div>
+        <div className="relative max-w-md"><h2 className="text-3xl font-semibold leading-snug">Seguimiento operacional de garantías explícitas en salud.</h2><p className="mt-4 text-white/70">Ingrese con su cuenta institucional autorizada.</p></div>
+        <p className="relative text-xs text-white/50">Monitor de Garantías GES</p>
       </div>
-
       <div className="flex items-center justify-center p-8">
         <form onSubmit={submit} className="w-full max-w-sm page-in">
-          <div className="mb-8 flex items-center gap-3 lg:hidden"><Logo /><span className="font-semibold">Servicio de Salud Demo</span></div>
-          <h1 className="text-2xl font-semibold">Monitor de Garantías GES</h1>
-          <p className="mt-1.5 text-sm text-muted">Ingrese con su cuenta institucional.</p>
-
-          {err && (
-            <div role="alert" className="mt-6 flex items-start gap-2.5 rounded-lg border border-[#f1b9b4] bg-[#fbe7e5] px-3.5 py-3 text-sm text-[#a12a22]">
-              <AlertCircle className="mt-0.5 size-4 shrink-0" />
-              <span>Usuario o contraseña incorrectos. Verifique sus credenciales e intente nuevamente.</span>
-            </div>
-          )}
-
+          <div className="mb-8 flex items-center gap-3 lg:hidden"><Logo /><span className="font-semibold">Servicio de Salud</span></div>
+          <h1 className="text-2xl font-semibold">Monitor de Garantías GES</h1><p className="mt-1.5 text-sm text-muted">Ingrese con su cuenta institucional.</p>
+          {error && <div role="alert" className="mt-6 flex items-start gap-2.5 rounded-lg border border-[#f1b9b4] bg-[#fbe7e5] px-3.5 py-3 text-sm text-[#a12a22]"><AlertCircle className="mt-0.5 size-4 shrink-0" /><span>{error}</span></div>}
           <div className="mt-6 space-y-4">
-            <label className="block">
-              <span className="mb-1.5 block text-sm font-medium">Usuario</span>
-              <div className="relative"><User className="absolute left-3 top-2.5 size-4 text-muted" />
-                <input className={cx(inputCls, 'pl-9', err && 'border-[#cc4339]')} value={u} onChange={(e) => setU(e.target.value)} placeholder="nombre.apellido" autoFocus /></div>
-            </label>
-            <label className="block">
-              <span className="mb-1.5 block text-sm font-medium">Contraseña</span>
-              <div className="relative"><Lock className="absolute left-3 top-2.5 size-4 text-muted" />
-                <input type="password" className={cx(inputCls, 'pl-9', err && 'border-[#cc4339]')} value={p} onChange={(e) => setP(e.target.value)} placeholder="••••••••" /></div>
-            </label>
-            <Check2 checked={rem} onChange={setRem} label="Recordarme" />
+            <label className="block"><span className="mb-1.5 block text-sm font-medium">Usuario</span><div className="relative"><User className="absolute left-3 top-2.5 size-4 text-muted" /><input required autoComplete="username" className={cx(inputCls, 'pl-9')} value={u} onChange={(e) => setU(e.target.value)} placeholder="nombre.apellido" autoFocus /></div></label>
+            <label className="block"><span className="mb-1.5 block text-sm font-medium">Contraseña</span><div className="relative"><Lock className="absolute left-3 top-2.5 size-4 text-muted" /><input required type="password" autoComplete="current-password" className={cx(inputCls, 'pl-9')} value={p} onChange={(e) => setP(e.target.value)} placeholder="Contraseña" /></div></label>
           </div>
-
-          <Btn type="submit" variant="primary" className="mt-6 w-full py-2.5" disabled={loading}>
-            {loading ? <><Loader2 className="size-4 animate-spin" />Verificando…</> : 'Ingresar'}
-          </Btn>
-          <p className="mt-4 rounded-lg bg-canvas px-3 py-2 text-xs text-muted">Demo: cualquier usuario · contraseña <span className="font-mono text-ink">ges2026</span></p>
-          <p className="mt-8 flex items-center gap-1.5 text-xs text-muted"><Lock className="size-3" />Sistema de uso interno. El acceso y las acciones quedan registrados.</p>
+          <Btn type="submit" variant="primary" className="mt-6 w-full py-2.5" disabled={loading}>{loading ? <><Loader2 className="size-4 animate-spin" />Verificando…</> : 'Ingresar'}</Btn>
+          <p className="mt-8 flex items-center gap-1.5 text-xs text-muted"><Lock className="size-3" />El acceso se valida en el servidor.</p>
         </form>
       </div>
     </div>

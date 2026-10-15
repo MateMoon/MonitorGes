@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
-  AlertCircle, ArrowLeft, ArrowRight, Bot, CheckCircle2, ChevronLeft, ChevronRight, Clock, Eye, FileSpreadsheet, Loader2, Lock, Mail, RefreshCw, Search, ShieldCheck, User, X, CircleSlash, Timer,
+  AlertCircle, ArrowLeft, ArrowRight, CheckCircle2, ChevronLeft, ChevronRight, Clock, Eye, FileSpreadsheet, Loader2, Lock, Search, ShieldCheck, User, X, CircleSlash, Timer,
 } from 'lucide-react'
 import { STATUS, STATUS_ORDER, fmt, rutFull, type Status } from '../data'
 import { login as authenticate, type AuthUser } from '../services/auth'
@@ -79,13 +79,6 @@ export function Dashboard({ nav }: { nav: Nav }) {
     return () => controller.abort()
   }, [])
   const urgentes = dashboard?.garantiasUrgentes ?? []
-  // Actividad reciente sigue siendo mock temporal: /api/dashboard no entrega un feed de actividad.
-  const feed = [
-    { icon: FileSpreadsheet, t: 'Última importación de Excel', d: 'Nomina_06102026.xlsx · hoy 08:32 · Juan Soto', go: () => nav('historial') },
-    { icon: RefreshCw, t: '40 registros actualizados', d: '8 nuevos y 32 actualizados en la última nómina', go: () => nav('historial') },
-    { icon: Mail, t: 'Últimos correos enviados', d: '14 correos enviados hoy · 1 con error de entrega', go: () => nav('alertas', { tab: 'bandeja' }) },
-    { icon: Bot, t: 'Revisión automática', d: 'Sistema revisó automáticamente las garantías hoy a las 08:00.', go: () => nav('alertas') },
-  ]
   return (
     <div className="page-in space-y-6">
       <div className="flex items-end justify-between">
@@ -110,10 +103,10 @@ export function Dashboard({ nav }: { nav: Nav }) {
         ))}
       </div>
 
-      <div className="grid grid-cols-1 gap-6 2xl:grid-cols-[1fr_340px]">
+      <div className="grid grid-cols-1 gap-6">
         <Card className="overflow-hidden">
-          <CardHeader title="Requieren atención" sub="Garantías no vencidas con menor plazo restante"
-            right={<Btn variant="ghost" onClick={() => nav('garantias', { estados: ['critica', 'proxima'] })}>Ver todas<ChevronRight className="size-4" /></Btn>} />
+          <CardHeader title="Requieren atención" sub="Garantías vencidas o con fecha límite dentro de los próximos 7 días"
+            right={<Btn variant="ghost" onClick={() => nav('garantias', { estados: ['vencida', 'critica'] })}>Ver todas<ChevronRight className="size-4" /></Btn>} />
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead><tr><th className="w-1 bg-[#f8f9fb] p-0" /><Th>Estado</Th><Th>RUT</Th><Th>Paciente</Th><Th>Problema de salud</Th><Th>Garantía</Th><Th>Responsable</Th><Th>Fecha límite</Th><Th>Días restantes</Th></tr></thead>
@@ -137,23 +130,6 @@ export function Dashboard({ nav }: { nav: Nav }) {
           </div>
         </Card>
 
-        <Card>
-          <CardHeader title="Actividad reciente" />
-          <ul className="divide-y divide-line">
-            {feed.map((f) => (
-              <li key={f.t}>
-                <button onClick={f.go} className="flex w-full items-start gap-3 px-5 py-4 text-left transition hover:bg-canvas">
-                  <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-brand-soft text-brand"><f.icon className="size-4" /></span>
-                  <span><span className="block text-sm font-medium">{f.t}</span><span className="mt-0.5 block text-xs leading-relaxed text-muted">{f.d}</span></span>
-                </button>
-              </li>
-            ))}
-          </ul>
-          <div className="m-4 flex items-center gap-2 rounded-lg bg-[#e6f4ec] px-3 py-2.5 text-xs text-[#256b45]">
-            <span className="relative flex size-2"><span className="absolute inline-flex size-full animate-ping rounded-full bg-[#3c9a67] opacity-60" /><span className="relative inline-flex size-2 rounded-full bg-[#3c9a67]" /></span>
-            Monitoreo automático activo
-          </div>
-        </Card>
       </div>
     </div>
   )

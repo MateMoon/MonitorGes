@@ -28,14 +28,13 @@ export default function App() {
   const [navKey, setNavKey] = useState(0)
   const [gest, setGest] = useState<Set<string | number>>(new Set())
   const [toastMsg, setToastMsg] = useState<string | null>(null)
-  const [bell, setBell] = useState(false)
 
   const toast = (m: string) => { setToastMsg(m); setTimeout(() => setToastMsg(null), 2600) }
   const closeSession = async () => { try { await logout(); setUser(null); setGest(new Set()) } catch { toast('No fue posible cerrar la sesión con el servidor. Intente nuevamente.') } }
   const nav: Nav = (p, o) => {
     // Estadísticas permanece bloqueada mientras está temporalmente deshabilitada.
     if (p === 'estadisticas') return
-    setPage(p); setBell(false); setNavKey((k) => k + 1)
+    setPage(p); setNavKey((k) => k + 1)
     if (o?.id) setSel(o.id)
     setPreset(o?.estados); setTab(o?.tab)
     window.scrollTo({ top: 0 })
@@ -82,21 +81,6 @@ export default function App() {
         <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-line bg-white/90 px-6 backdrop-blur lg:px-8">
           <h1 className="text-[15px] font-semibold">{title}</h1>
           <div className="flex items-center gap-5">
-            <span className="hidden items-center gap-2 text-sm text-muted md:flex"><span className="size-2 rounded-full bg-[#3c9a67]" />Actualizado: 06/10/2026 08:32</span>
-            <div className="relative">
-              <button onClick={() => setBell(!bell)} className="relative grid size-9 place-items-center rounded-lg border border-line hover:bg-canvas" aria-label="Notificaciones">
-                <Bell className="size-[18px]" /><span className="absolute -right-1 -top-1 grid size-4 place-items-center rounded-full bg-[#cc4339] text-[10px] font-semibold text-white">3</span>
-              </button>
-              {bell && (
-                <div className="absolute right-0 top-11 w-80 overflow-hidden rounded-xl border border-line bg-white shadow-xl">
-                  <p className="border-b border-line px-4 py-3 text-sm font-semibold">Notificaciones</p>
-                  {[['6 garantías críticas requieren gestión', 'Hace 2 h'], ['Importación completada: 253 registros', 'Hoy 08:32'], ['1 correo no pudo ser entregado', 'Hoy 08:05']].map(([t, h]) => (
-                    <button key={t} onClick={() => nav(t.startsWith('6') ? 'garantias' : t.startsWith('Imp') ? 'historial' : 'alertas', t.startsWith('6') ? { estados: ['critica'] } : { tab: 'bandeja' })} className="block w-full border-b border-line px-4 py-3 text-left last:border-0 hover:bg-canvas"><p className="text-sm">{t}</p><p className="text-xs text-muted">{h}</p></button>
-                  ))}
-                  <button onClick={() => nav('alertas', { tab: 'bandeja' })} className="w-full bg-canvas px-4 py-2.5 text-sm font-medium text-brand">Ver bandeja completa</button>
-                </div>
-              )}
-            </div>
             <div className="flex items-center gap-2.5 border-l border-line pl-5"><span className="grid size-8 place-items-center rounded-full bg-brand-soft text-xs font-semibold uppercase text-brand">{user.nombre.slice(0, 2)}</span><span className="hidden text-sm font-medium md:block">{user.nombre}</span></div>
           </div>
         </header>
@@ -111,7 +95,7 @@ export default function App() {
           {/* Estadísticas sigue temporalmente deshabilitada.
           {page === 'estadisticas' && <Estadisticas />}
           */}
-          {page === 'configuracion' && <Configuracion toast={toast} />}
+          {page === 'configuracion' && <Configuracion />}
         </main>
       </div>
 
@@ -119,3 +103,4 @@ export default function App() {
     </div>
   )
 }
+

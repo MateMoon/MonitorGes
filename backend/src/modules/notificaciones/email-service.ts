@@ -29,6 +29,7 @@ export class EmailTransportError extends Error {
     public readonly operation: "verify" | "send",
     public readonly code: string | undefined,
     public readonly command: string | undefined,
+    public readonly responseCode: number | undefined,
   ) {
     super(operation === "verify" ? "No se pudo verificar la conexión SMTP." : "El transporte SMTP no pudo aceptar el mensaje.");
     this.name = "EmailTransportError";
@@ -67,12 +68,13 @@ export function readEmailConfig(
   return { host, port: Number(portText), secure: secureText === "true", user, pass, from, ...(testTo ? { testTo } : {}) };
 }
 
-function errorDetails(error: unknown): { code?: string; command?: string } {
+function errorDetails(error: unknown): { code?: string; command?: string; responseCode?: number } {
   if (!error || typeof error !== "object") return {};
-  const candidate = error as { code?: unknown; command?: unknown };
+  const candidate = error as { code?: unknown; command?: unknown; responseCode?: unknown };
   return {
     ...(typeof candidate.code === "string" ? { code: candidate.code } : {}),
     ...(typeof candidate.command === "string" ? { command: candidate.command } : {}),
+    ...(typeof candidate.responseCode === "number" ? { responseCode: candidate.responseCode } : {}),
   };
 }
 
@@ -90,7 +92,7 @@ export function createEmailService(config: EmailConfig) {
         await transporter.verify();
       } catch (error) {
         const details = errorDetails(error);
-        throw new EmailTransportError("verify", details.code, details.command);
+        throw new EmailTransportError("verify", details.code, details.command, details.responseCode);
       }
     },
 
@@ -106,7 +108,7 @@ export function createEmailService(config: EmailConfig) {
         return result.messageId ? { messageId: result.messageId } : {};
       } catch (error) {
         const details = errorDetails(error);
-        throw new EmailTransportError("send", details.code, details.command);
+        throw new EmailTransportError("send", details.code, details.command, details.responseCode);
       }
     },
   };

@@ -89,4 +89,11 @@ describe("servicio de correo SMTP", () => {
     expect(sendError).toMatchObject<Partial<EmailTransportError>>({ operation: "send", code: "ECONNECTION", command: "CONN" });
     expect((sendError as Error).message).not.toContain("secret leaked by smtp");
   });
+
+  it("conserva responseCode SMTP para clasificar respuestas transitorias", async () => {
+    smtp.sendMail.mockRejectedValueOnce(Object.assign(new Error("private smtp detail"), { code: "EENVELOPE", responseCode: 421 }));
+    const error = await createEmailService(readEmailConfig(validEnv)).send({ to: "qa@example.test", subject: "Asunto", text: "Mensaje" }).catch((caught: unknown) => caught);
+    expect(error).toMatchObject<Partial<EmailTransportError>>({ code: "EENVELOPE", responseCode: 421 });
+    expect((error as Error).message).not.toContain("private smtp detail");
+  });
 });

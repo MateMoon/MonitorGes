@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { readEmailAutomationConfig, timeInSantiago } from "../src/modules/notificaciones/automation-config.js";
-import { buildGuaranteeReport, deliverConfiguredDailyReport, deliverDailyReport, type ReportDeliveryStore } from "../src/modules/notificaciones/report-service.js";
+import { buildGuaranteeReport, deliverConfiguredDailyReport, deliverDailyReport, sendManualConfiguredReport, type ReportDeliveryStore } from "../src/modules/notificaciones/report-service.js";
+import { isTransientEmailFailure, MAX_EMAIL_ATTEMPTS } from "../src/modules/notificaciones/email-retry-policy.js";
 
 const today = "2026-10-13";
 const sample = (id: string, days: number, nombreGarantia = `Garantía ${id}`) => ({
@@ -13,15 +14,18 @@ const sample = (id: string, days: number, nombreGarantia = `Garantía ${id}`) =>
 function memoryStore(): ReportDeliveryStore {
   const deliveries = new Map<string, { recipient: string; state: "IN_PROGRESS" | "SENT" | "FAILED" }>();
   return {
+    async hasReservation(date) { return deliveries.has(date); },
     async claim(date, recipient) {
       const existing = deliveries.get(date);
       if (existing) {
-        if (existing.recipient !== recipient || existing.state === "SENT" || existing.state === "IN_PROGRESS") return false;
+        if (existing.recipient !== recipient) return "recipient_changed";
+        if (existing.state === "SENT") return "already_sent";
+        if (existing.state === "IN_PROGRESS") return "deferred";
         existing.state = "IN_PROGRESS";
-        return true;
+        return "claimed";
       }
       deliveries.set(date, { recipient, state: "IN_PROGRESS" });
-      return true;
+      return "claimed";
     },
     async sent(date, recipient) {
       const delivery = deliveries.get(date);
@@ -53,26 +57,51 @@ describe("informes diarios de correo", () => {
     expect(report.map(({ id }) => id)).toEqual(["expired-1", "c-2", "c-7", "attention"]);
   });
 
-  it("omite un destinatario que ya recibió el informe de esa fecha", async () => {
+  it("omite un destinatario que ya recibió el informe y conserva el motivo", async () => {
     const store = memoryStore();
     const mailer = { send: vi.fn().mockResolvedValue({ messageId: "fictitious-id" }) };
     const options = { fechaInforme: today, rows: [sample("a", 1)], recipients: ["qa@example.test"], mailer, store };
     expect(await deliverDailyReport(options)).toMatchObject({ sent: 1, skipped: 0, failed: 0 });
-    expect(await deliverDailyReport(options)).toMatchObject({ sent: 0, skipped: 1, failed: 0 });
+    expect(await deliverDailyReport(options)).toMatchObject({ sent: 0, skipped: 1, failed: 0, skipReasons: { already_sent: 1 } });
+    expect(mailer.send).toHaveBeenCalledTimes(1);
+  });
+
+  it("reserva una sola ejecución cuando dos procesos compiten por la misma fecha", async () => {
+    const store = memoryStore();
+    const mailer = { send: vi.fn().mockResolvedValue({ messageId: "fictitious-id" }) };
+    const options = { fechaInforme: today, rows: [sample("a", 1)], recipients: ["qa@example.test"], mailer, store };
+    const results = await Promise.all([deliverDailyReport(options), deliverDailyReport(options)]);
+    expect(results.reduce((sum, result) => sum + result.sent, 0)).toBe(1);
     expect(mailer.send).toHaveBeenCalledTimes(1);
   });
 
   it("registra el fallo SMTP y reintenta al destinatario reservado", async () => {
     const store = memoryStore();
     const send = vi.fn()
-      .mockRejectedValueOnce(Object.assign(new Error("SMTP credentials must not be logged"), { code: "EAUTH", operation: "send" }))
+      .mockRejectedValueOnce(Object.assign(new Error("SMTP failure"), { code: "ETIMEDOUT", operation: "send" }))
       .mockResolvedValue({ messageId: "fictitious-id" });
     const onError = vi.fn();
     const options = { fechaInforme: today, rows: [sample("a", 1)], recipients: ["qa1@example.test"], mailer: { send }, store, onError };
     expect(await deliverDailyReport(options)).toMatchObject({ sent: 0, failed: 1 });
-    expect(onError).toHaveBeenCalledWith("qa1@example.test", { code: "EAUTH", operation: "send" });
+    expect(onError).toHaveBeenCalledWith("qa1@example.test", { code: "ETIMEDOUT", operation: "send", retryable: true });
     expect(await deliverDailyReport({ ...options, recipients: ["qa1@example.test"] })).toMatchObject({ sent: 1, failed: 0 });
     expect(send).toHaveBeenCalledTimes(2);
+  });
+
+  it("no marca el informe enviado antes de que SMTP acepte el correo", async () => {
+    const store = memoryStore();
+    const markSent = vi.fn(store.sent.bind(store));
+    store.sent = markSent;
+    let accept!: (value: { messageId: string }) => void;
+    const send = vi.fn(() => new Promise<{ messageId: string }>((resolve) => { accept = resolve; }));
+    const delivery = deliverDailyReport({
+      fechaInforme: today, rows: [sample("a", 1)], recipients: ["qa@example.test"], mailer: { send }, store,
+    });
+    await Promise.resolve();
+    expect(markSent).not.toHaveBeenCalled();
+    accept({ messageId: "accepted-by-smtp" });
+    await delivery;
+    expect(markSent).toHaveBeenCalledTimes(1);
   });
 
   it("usa la dirección guardada y aplaza cambios de destinatario hasta el siguiente día", async () => {
@@ -88,7 +117,7 @@ describe("informes diarios de correo", () => {
     });
     expect(await run(today)).toMatchObject({ configured: true, sent: 1 });
     configured = "qa-new@example.test";
-    expect(await run(today)).toMatchObject({ configured: true, sent: 0, skipped: 1 });
+    expect(await run(today)).toMatchObject({ configured: true, sent: 0, skipped: 1, skipReasons: { recipient_changed: 1 } });
     expect(await run("2026-10-14")).toMatchObject({ configured: true, sent: 1 });
     expect(send.mock.calls.map(([message]) => message.to)).toEqual(["qa-old@example.test", "qa-new@example.test"]);
   });
@@ -106,10 +135,52 @@ describe("informes diarios de correo", () => {
     expect(mailer.send).not.toHaveBeenCalled();
   });
 
+  it("permite una prueba manual con el destinatario de Alertas sin reservar el envío diario", async () => {
+    const send = vi.fn().mockResolvedValue({ messageId: "manual-test-id" });
+    let configured = "alertas@example.test";
+    const result = await sendManualConfiguredReport({
+      fechaInforme: today,
+      rows: [sample("manual", 1)],
+      getRecipient: async () => configured,
+      mailer: { send },
+    });
+    expect(result).toMatchObject({ configured: true, acceptedBySmtp: true, eligible: 1, messageId: "manual-test-id" });
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0][0].to).toBe("alertas@example.test");
+    expect(send.mock.calls[0][0].subject).toContain("prueba manual");
+    configured = "";
+    const missing = await sendManualConfiguredReport({
+      fechaInforme: today, rows: [], getRecipient: async () => configured || null, mailer: { send },
+    });
+    expect(missing).toMatchObject({ configured: false, acceptedBySmtp: false });
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
   it("deshabilita por defecto y valida la hora", () => {
     expect(readEmailAutomationConfig({}).enabled).toBe(false);
     expect(readEmailAutomationConfig({ AUTO_EMAIL_ENABLED: "true", AUTO_EMAIL_TIME: "07:15" })).toEqual({ enabled: true, time: "07:15" });
     expect(() => readEmailAutomationConfig({ AUTO_EMAIL_ENABLED: "yes" })).toThrow("AUTO_EMAIL_ENABLED");
     expect(() => readEmailAutomationConfig({ AUTO_EMAIL_TIME: "25:00" })).toThrow("AUTO_EMAIL_TIME");
+  });
+
+  it("clasifica fallos SMTP y fija un máximo explícito de cinco intentos", () => {
+    expect(isTransientEmailFailure({ code: "ETIMEDOUT" })).toBe(true);
+    expect(isTransientEmailFailure({ responseCode: 421 })).toBe(true);
+    expect(isTransientEmailFailure({ code: "EAUTH", responseCode: 535 })).toBe(false);
+    expect(isTransientEmailFailure({ responseCode: 550 })).toBe(false);
+    expect(MAX_EMAIL_ATTEMPTS).toBe(5);
+  });
+
+  it("no reintenta si SMTP pudo aceptar el mensaje y falla el registro", async () => {
+    const store = memoryStore();
+    store.sent = async () => { throw new Error("database unavailable"); };
+    const send = vi.fn().mockResolvedValue({ messageId: "accepted-by-smtp" });
+    const onPersistenceError = vi.fn();
+    const result = await deliverDailyReport({
+      fechaInforme: today, rows: [sample("a", 1)], recipients: ["qa@example.test"], mailer: { send }, store, onPersistenceError,
+    });
+    expect(result).toMatchObject({ sent: 0, failed: 0, uncertain: 1 });
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(onPersistenceError).toHaveBeenCalledTimes(1);
   });
 });

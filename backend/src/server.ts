@@ -6,10 +6,11 @@ import { startEmailReportScheduler } from "./modules/notificaciones/email-report
 const app = buildApp();
 const port = Number(process.env.PORT ?? 3001);
 const host = process.env.HOST ?? "0.0.0.0";
-const stopEmailScheduler = startEmailReportScheduler(app.log);
+let emailScheduler: ReturnType<typeof startEmailReportScheduler> | undefined;
 
 try {
   await app.listen({ port, host });
+  emailScheduler = startEmailReportScheduler(app.log);
 } catch (error) {
   app.log.error(error);
   process.exit(1);
@@ -17,8 +18,8 @@ try {
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, async () => {
+    await emailScheduler?.stop();
     await app.close();
-    stopEmailScheduler();
     await prisma.$disconnect();
     process.exit(0);
   });

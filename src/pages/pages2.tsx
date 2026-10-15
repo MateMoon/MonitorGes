@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { AlertTriangle, ArrowDown, Bot, CheckCircle2, ChevronLeft, ChevronRight, FileSpreadsheet, FileX, Loader2, Mail, Plus, UploadCloud, X, Eye } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, FileSpreadsheet, FileX, Loader2, UploadCloud, X, Eye } from 'lucide-react'
 import { STATUS, STATUS_ORDER, type Status } from '../data'
-import { CONTEOS } from '../data/mockData'
-import { IMPORTS, NOTIFS, RESPONSABLES, USUARIOS, GARANTIAS_DATA } from '../data/mockData'
+import { CONTEOS, GARANTIAS_DATA, RESPONSABLES } from '../data/mockData'
 import type { Nav } from './pages1'
 import { getImportHistory, importFile, validateImportFile, type ImportHistoryItem, type ImportPagination, type ImportResult, type ImportValidationResult } from '../services/importaciones'
 import { getNotificationEmailConfig, saveNotificationEmail } from '../services/notificaciones'
-import { Btn, Card, CardHeader, Check2, StatusBadge, Th, cx, inputCls, tdCls } from '../ui'
+import { Btn, Card, CardHeader, StatusBadge, Th, cx, inputCls, tdCls } from '../ui'
 
 type Toast = (m: string) => void
 
@@ -232,20 +231,11 @@ export function Historial() {
   )
 }
 /* ---------------- ALERTAS ---------------- */
-function NotifBadge({ s }: { s: string }) {
-  const c = s === 'Enviado' ? 'bg-[#e6f4ec] text-[#256b45] ring-[#bfe1cd]' : s === 'Pendiente' ? 'bg-[#fcf4d9] text-[#7d5c07] ring-[#efdc9a]' : 'bg-[#fbe7e5] text-[#a12a22] ring-[#f1b9b4]'
-  return <span className={cx('rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset', c)}>{s}</span>
-}
-
 export function Alertas({ initialTab, toast, canEditEmail }: { initialTab?: string; toast: Toast; canEditEmail: boolean }) {
-  const [tab, setTab] = useState(initialTab ?? 'config')
-  const [days, setDays] = useState([true, true, true, true, true, false])
-  const [resumen, setResumen] = useState(true)
-  const [ind, setInd] = useState(true)
-  const [filtro, setFiltro] = useState('Todos')
+  const [tab, setTab] = useState(initialTab === 'monitoreo' ? 'monitoreo' : 'bandeja')
   const [email, setEmail] = useState('')
   const [savedEmail, setSavedEmail] = useState<string | null>(null)
-  const [automaticEnabled, setAutomaticEnabled] = useState(false)
+  const [automaticEnabled, setAutomaticEnabled] = useState<boolean | null>(null)
   const [scheduledTime, setScheduledTime] = useState('08:00')
   const [emailLoading, setEmailLoading] = useState(true)
   const [emailSaving, setEmailSaving] = useState(false)
@@ -254,145 +244,46 @@ export function Alertas({ initialTab, toast, canEditEmail }: { initialTab?: stri
   const [emailSavedMessage, setEmailSavedMessage] = useState<string | null>(null)
   useEffect(() => {
     const controller = new AbortController()
-    setEmailLoading(true)
-    getNotificationEmailConfig(controller.signal)
-      .then((config) => {
-        setEmail(config.email ?? '')
-        setSavedEmail(config.email)
-        setAutomaticEnabled(config.automaticEnabled)
-        setScheduledTime(config.scheduledTime)
-      })
-      .catch((cause) => {
-        if (!controller.signal.aborted) setEmailLoadError(cause instanceof Error ? cause.message : 'No fue posible cargar la configuración del correo.')
-      })
-      .finally(() => { if (!controller.signal.aborted) setEmailLoading(false) })
+    getNotificationEmailConfig(controller.signal).then((config) => {
+      setEmail(config.email ?? '')
+      setSavedEmail(config.email)
+      setAutomaticEnabled(config.automaticEnabled)
+      setScheduledTime(config.scheduledTime)
+    }).catch((cause) => {
+      if (!controller.signal.aborted) {
+        setEmailLoadError(cause instanceof Error ? cause.message : 'No fue posible cargar la configuración del correo.')
+        setAutomaticEnabled(null)
+      }
+    }).finally(() => { if (!controller.signal.aborted) setEmailLoading(false) })
     return () => controller.abort()
   }, [])
 
   const saveEmail = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    setEmailSaveError(null)
-    setEmailSavedMessage(null)
-    setEmailSaving(true)
+    event.preventDefault(); setEmailSaveError(null); setEmailSavedMessage(null); setEmailSaving(true)
     try {
       const saved = await saveNotificationEmail(email.trim())
-      setEmail(saved.email)
-      setSavedEmail(saved.email)
-      setEmailSavedMessage('La dirección destinataria se guardó correctamente.')
+      setEmail(saved.email); setSavedEmail(saved.email); setEmailSavedMessage('La dirección destinataria se guardó correctamente.')
       toast('Destinatario de informes actualizado.')
-    } catch (cause) {
-      setEmailSaveError(cause instanceof Error ? cause.message : 'No fue posible guardar la dirección. Intenta nuevamente.')
-    } finally {
-      setEmailSaving(false)
-    }
+    } catch (cause) { setEmailSaveError(cause instanceof Error ? cause.message : 'No fue posible guardar la dirección. Intenta nuevamente.') }
+    finally { setEmailSaving(false) }
   }
-  const labels = ['30 días antes', '15 días antes', '7 días antes', '1 día antes', 'Día de vencimiento', '1 día después del vencimiento']
-  const rows = NOTIFS.filter((n) => filtro === 'Todos' || n.estado === filtro)
-  const tabs = [['config', 'Configuración de alertas'], ['bandeja', 'Bandeja de notificaciones'], ['monitoreo', 'Monitoreo automático']]
-
-  return (
-    <div className="page-in space-y-5">
-      <div><h2 className="text-2xl font-semibold">Sistema de alertas</h2></div>
-      <Card className="grid grid-cols-1 divide-y divide-line md:grid-cols-3 md:divide-x md:divide-y-0">
-        <div className="flex items-center gap-3 p-5"><span className={cx('relative flex size-3', automaticEnabled && 'after:absolute after:-inset-1 after:animate-ping after:rounded-full after:bg-[#3c9a67] after:opacity-40')}><span className={cx('relative inline-flex size-3 rounded-full', automaticEnabled ? 'bg-[#3c9a67]' : 'bg-[#98a2b3]')} /></span><div><p className={cx('font-semibold', automaticEnabled ? 'text-[#256b45]' : 'text-muted')}>{emailLoading ? 'Consultando estado' : automaticEnabled ? 'Sistema automático habilitado' : 'Sistema automático deshabilitado'}</p><p className="text-xs text-muted">{emailLoading ? 'Leyendo configuración del backend' : automaticEnabled ? `Informe diario a las ${scheduledTime} (America/Santiago)` : 'No enviará informes mientras esté deshabilitado'}</p></div></div>
-        <div className="p-5"><p className="text-xs uppercase tracking-wider text-muted">Destinatario del informe</p><p className="mt-1 truncate text-sm font-semibold">{emailLoading ? 'Cargando…' : savedEmail ?? 'Sin configurar'}</p></div>
-        <div className="p-5"><p className="text-xs uppercase tracking-wider text-muted">Programación diaria</p><p className="mt-1 text-sm font-semibold">{scheduledTime} · America/Santiago</p></div>
-      </Card>
-
-      <Card>
-        <CardHeader title="Configuración de notificaciones por correo" sub="Destinatario persistido en PostgreSQL para el informe automático diario" />
-        <form onSubmit={saveEmail} className="space-y-4 p-5">
-          <div>
-            <label htmlFor="notification-email" className="mb-1.5 block text-sm font-medium">Correo destinatario</label>
-            <input id="notification-email" name="email" type="email" required maxLength={254} autoComplete="email" value={email}
-              onChange={(event) => { setEmail(event.target.value); setEmailSaveError(null); setEmailSavedMessage(null) }}
-              disabled={!canEditEmail || emailLoading || emailSaving} placeholder="equipo@institucion.cl" className={cx(inputCls, 'max-w-xl')} />
-            <p className="mt-1.5 text-xs text-muted">El informe contiene garantías y fechas límite; no incluye nombre, RUT ni diagnóstico de pacientes.</p>
-          </div>
-          {emailLoadError && <p role="alert" className="rounded-lg bg-[#fbe7e5] px-4 py-3 text-sm text-[#a12a22]">No fue posible cargar la configuración: {emailLoadError}</p>}
-          {emailLoading && <p role="status" className="flex items-center gap-2 text-sm text-muted"><Loader2 className="size-4 animate-spin" />Cargando destinatario guardado…</p>}
-          {!emailLoading && !emailLoadError && !savedEmail && <p className="rounded-lg bg-[#fff8e8] px-4 py-3 text-sm text-[#75550a]">Aún no hay una dirección guardada. El programador no enviará informes hasta que configures una dirección válida.</p>}
-          {!emailLoading && !emailLoadError && savedEmail && <p className="text-xs text-muted">Dirección actualmente guardada: <span className="font-medium text-ink">{savedEmail}</span></p>}
-          <p className={cx('rounded-lg px-4 py-3 text-sm', automaticEnabled ? 'bg-[#e6f4ec] text-[#256b45]' : 'bg-canvas text-muted')}>
-            Envío automático {automaticEnabled ? `habilitado para las ${scheduledTime} (America/Santiago)` : 'deshabilitado en el backend'}.
-            {automaticEnabled && ' Guardar una dirección no envía un correo inmediatamente.'}
-          </p>
-          {!canEditEmail && <p className='text-xs text-muted'>Solo administradores pueden modificar el destinatario.</p>}
-          {emailSaveError && <p role="alert" className="rounded-lg bg-[#fbe7e5] px-4 py-3 text-sm text-[#a12a22]">{emailSaveError}</p>}
-          {emailSavedMessage && <p role="status" className="rounded-lg bg-[#e6f4ec] px-4 py-3 text-sm text-[#256b45]">{emailSavedMessage}</p>}
-          <div className="flex justify-end"><Btn variant="primary" type="submit" disabled={!canEditEmail || emailLoading || emailSaving || Boolean(emailLoadError)}>{emailSaving ? <><Loader2 className="size-4 animate-spin" />Guardando…</> : 'Guardar configuración'}</Btn></div>
-        </form>
-      </Card>
-      <div className="flex gap-1 border-b border-line">
-        {tabs.map(([k, l]) => <button key={k} onClick={() => setTab(k)} className={cx('-mb-px border-b-2 px-4 py-2.5 text-sm font-medium transition', tab === k ? 'border-brand text-brand' : 'border-transparent text-muted hover:text-ink')}>{l}</button>)}
-      </div>
-
-      {tab === 'config' && (
-        <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-          <Card>
-            <CardHeader title="Configuración de alertas" sub="Momentos en que se notifica al responsable" />
-            <div className="space-y-3.5 p-5">{labels.map((l, i) => <Check2 key={l} label={l} checked={days[i]} onChange={(v) => setDays(days.map((d, j) => (j === i ? v : d)))} />)}</div>
-            <div className="border-t border-line p-5">
-              <p className="mb-2 text-sm font-medium">Frecuencia de revisión</p>
-              <select className={cx(inputCls, 'max-w-xs')} defaultValue="1"><option value="1">Una vez al día — 08:00</option><option>Dos veces al día — 08:00 y 15:00</option></select>
-            </div>
-          </Card>
-          <div className="space-y-5">
-            <Card>
-              <CardHeader title="Tipo de notificación" />
-              <div className="space-y-3.5 p-5"><Check2 checked={resumen} onChange={setResumen} label="Resumen diario" /><Check2 checked={ind} onChange={setInd} label="Alertas individuales para casos críticos" /></div>
-            </Card>
-            <div className="flex justify-end"><Btn variant="primary" onClick={() => toast('Configuración de alertas guardada')}>Guardar cambios</Btn></div>
-          </div>
-        </div>
-      )}
-
-      {tab === 'bandeja' && (
-        <Card className="overflow-hidden">
-          <CardHeader title="Bandeja de notificaciones" sub="Historial de correos y alertas emitidas"
-            right={<div className="flex gap-1.5">{['Todos', 'Enviado', 'Pendiente', 'Error'].map((f) => <button key={f} onClick={() => setFiltro(f)} className={cx('rounded-full border px-3 py-1 text-sm', filtro === f ? 'border-brand/40 bg-brand-soft font-medium text-brand-dark' : 'border-line text-muted hover:bg-canvas')}>{f}</button>)}</div>} />
-          <table className="w-full"><thead><tr><Th>Fecha</Th><Th>Garantía</Th><Th>Paciente</Th><Th>Tipo de alerta</Th><Th>Destinatario</Th><Th>Canal</Th><Th>Estado</Th></tr></thead>
-            <tbody className="divide-y divide-line">{rows.map((n, i) => (
-              <tr key={i} className="hover:bg-canvas"><td className={cx(tdCls, 'tnum')}>{n.fecha}</td><td className={tdCls}>{n.garantia}</td><td className={tdCls}>{n.paciente}</td><td className={tdCls}>{n.tipo}</td><td className={cx(tdCls, 'font-mono text-[13px]')}>{n.dest}</td>
-                <td className={tdCls}><span className="inline-flex items-center gap-1.5"><Mail className="size-3.5 text-muted" />{n.canal}</span></td><td className={tdCls}><NotifBadge s={n.estado} /></td></tr>))}
-            </tbody></table>
-        </Card>
-      )}
-
-      {tab === 'monitoreo' && <Monitoreo enabled={automaticEnabled} scheduledTime={scheduledTime} />}
-    </div>
-  )
-}
-
-function Monitoreo({ enabled, scheduledTime }: { enabled: boolean; scheduledTime: string }) {
-  const flow = ['Nueva fecha límite', 'Cálculo automático de días restantes', 'Actualización del estado', 'Evaluación de alertas', 'Envío de correo', 'Registro de notificación']
-  return (
-    <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1fr_1fr]">
-      <Card>
-        <CardHeader title="Monitoreo automático" right={<span className={cx("inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-medium", enabled ? "bg-[#e6f4ec] text-[#256b45]" : "bg-canvas text-muted")}>{enabled ? "Habilitado" : "Deshabilitado"}</span>} />
-        <div className="p-5">
-          <p className="mb-5 text-sm text-muted">{enabled ? `El backend ejecuta el informe todos los días a las ${scheduledTime} (America/Santiago), aunque la web esté cerrada.` : "El proceso programado está deshabilitado en la configuración del backend."}</p>
-          <ol>
-            {flow.map((f, i) => (
-              <li key={f}>
-                <div className="flex items-center gap-3 rounded-lg border border-line bg-[#fafbfc] px-4 py-2.5"><span className="grid size-6 place-items-center rounded-full bg-brand text-xs font-semibold text-white">{i + 1}</span><span className="text-sm font-medium">{f}</span></div>
-                {i < flow.length - 1 && <div className="flex justify-center py-1 text-[#98a2b3]"><ArrowDown className="size-4" /></div>}
-              </li>
-            ))}
-          </ol>
-        </div>
-      </Card>
-      <Card className="self-start">
-        <CardHeader title="Ejemplo de ejecución" sub="Garantía de Juan Pérez" />
-        <dl className="divide-y divide-line text-sm">
-          {[['Fecha límite', '15/10/2026'], ['Hoy', '08/10/2026'], ['Días restantes', '7']].map(([k, v]) => <div key={k} className="flex justify-between px-5 py-3"><dt className="text-muted">{k}</dt><dd className="tnum font-semibold">{v}</dd></div>)}
-          <div className="flex items-center justify-between px-5 py-3"><dt className="text-muted">Estado</dt><dd><StatusBadge s="critica" /></dd></div>
-          <div className="flex items-center justify-between px-5 py-3"><dt className="text-muted">Alerta</dt><dd className="inline-flex items-center gap-1.5 font-medium text-[#256b45]"><CheckCircle2 className="size-4" />Correo enviado automáticamente</dd></div>
-        </dl>
-        <div className="m-5 flex items-start gap-2.5 rounded-lg bg-brand-soft px-4 py-3 text-sm text-brand-dark"><Bot className="mt-0.5 size-4 shrink-0" />Sistema revisó automáticamente las garantías hoy a las 08:00.</div>
-      </Card>
-    </div>
-  )
+  const tabs = [['bandeja', 'Bandeja de notificaciones'], ['monitoreo', 'Monitoreo automático']]
+  return <div className="page-in space-y-5">
+    <div><h2 className="text-2xl font-semibold">Sistema de alertas</h2></div>
+    <Card className="grid grid-cols-1 divide-y divide-line md:grid-cols-3 md:divide-x md:divide-y-0">
+      <div className="flex items-center gap-3 p-5"><span className={cx('size-3 rounded-full', automaticEnabled === true ? 'bg-[#3c9a67]' : 'bg-[#98a2b3]')} /><div><p className="font-semibold text-muted">{emailLoading ? 'Consultando configuración' : automaticEnabled === null ? 'Estado no verificado' : `Configurado como ${automaticEnabled ? 'habilitado' : 'deshabilitado'}`}</p><p className="text-xs text-muted">{emailLoading ? 'Leyendo configuración del backend' : 'El estado de ejecución del programador no está disponible'}</p></div></div>
+      <div className="p-5"><p className="text-xs uppercase tracking-wider text-muted">Destinatario del informe</p><p className="mt-1 truncate text-sm font-semibold">{emailLoading ? 'Cargando...' : savedEmail ?? 'Sin configurar'}</p></div>
+      <div className="p-5"><p className="text-xs uppercase tracking-wider text-muted">Ejecución</p><p className="mt-1 text-sm font-semibold">No verificada</p></div>
+    </Card>
+    <Card><CardHeader title="Configuración de notificaciones por correo" sub="Destinatario persistido en PostgreSQL para el informe automático diario" />
+      <form onSubmit={saveEmail} className="space-y-4 p-5"><div><label htmlFor="notification-email" className="mb-1.5 block text-sm font-medium">Correo destinatario</label><input id="notification-email" name="email" type="email" required maxLength={254} autoComplete="email" value={email} onChange={(event) => { setEmail(event.target.value); setEmailSaveError(null); setEmailSavedMessage(null) }} disabled={!canEditEmail || emailLoading || emailSaving} placeholder="equipo@institucion.cl" className={cx(inputCls, 'max-w-xl')} /><p className="mt-1.5 text-xs text-muted">El informe contiene garantías y fechas límite; no incluye nombre, RUT ni diagnóstico de pacientes.</p></div>
+      {emailLoadError && <p role="alert" className="rounded-lg bg-[#fbe7e5] px-4 py-3 text-sm text-[#a12a22]">No fue posible cargar la configuración: {emailLoadError}</p>}{emailLoading && <p role="status" className="flex items-center gap-2 text-sm text-muted"><Loader2 className="size-4 animate-spin" />Cargando destinatario guardado...</p>}{!emailLoading && !emailLoadError && !savedEmail && <p className="rounded-lg bg-[#fff8e8] px-4 py-3 text-sm text-[#75550a]">Aún no hay una dirección guardada. El programador no enviará informes hasta que configures una dirección válida.</p>}{!emailLoading && !emailLoadError && savedEmail && <p className="text-xs text-muted">Dirección actualmente guardada: <span className="font-medium text-ink">{savedEmail}</span></p>}
+      <p className={cx('rounded-lg px-4 py-3 text-sm', automaticEnabled === true ? 'bg-[#e6f4ec] text-[#256b45]' : 'bg-canvas text-muted')}>Configuración del programador: {automaticEnabled === null ? 'no verificada' : automaticEnabled ? `habilitado para las ${scheduledTime} (America/Santiago)` : 'deshabilitado'}. El estado de ejecución no está expuesto por la API.</p>{!canEditEmail && <p className="text-xs text-muted">Solo administradores pueden modificar el destinatario.</p>}{emailSaveError && <p role="alert" className="rounded-lg bg-[#fbe7e5] px-4 py-3 text-sm text-[#a12a22]">{emailSaveError}</p>}{emailSavedMessage && <p role="status" className="rounded-lg bg-[#e6f4ec] px-4 py-3 text-sm text-[#256b45]">{emailSavedMessage}</p>}<div className="flex justify-end"><Btn variant="primary" type="submit" disabled={!canEditEmail || emailLoading || emailSaving || Boolean(emailLoadError)}>{emailSaving ? 'Guardando...' : 'Guardar configuración'}</Btn></div></form>
+    </Card>
+    <div className="flex gap-1 border-b border-line">{tabs.map(([key, label]) => <button key={key} onClick={() => setTab(key)} className={cx('-mb-px border-b-2 px-4 py-2.5 text-sm font-medium transition', tab === key ? 'border-brand text-brand' : 'border-transparent text-muted hover:text-ink')}>{label}</button>)}</div>
+    {tab === 'bandeja' && <Card className="p-8 text-center"><CardHeader title="Bandeja de notificaciones" sub="No hay una API de bandeja o historial de correos disponible." /><p className="text-sm text-muted">No se pueden consultar envíos ni alertas desde esta pantalla.</p></Card>}
+    {tab === 'monitoreo' && <Card className="p-5"><CardHeader title="Monitoreo automático" right={<span className="rounded-full bg-canvas px-3 py-1 text-sm text-muted">Ejecución no verificada</span>} /><p className="text-sm text-muted">{automaticEnabled === null ? 'No fue posible consultar la configuración del backend.' : `Configurado como ${automaticEnabled ? 'habilitado' : 'deshabilitado'} para las ${scheduledTime} (America/Santiago).`}</p><p className="mt-2 text-sm text-muted">La API informa la configuración, pero no expone el estado de ejecución del programador ni su historial.</p></Card>}
+  </div>
 }
 
 /* ---------------- ESTADÍSTICAS ---------------- */
@@ -472,48 +363,4 @@ export function Estadisticas() {
 }
 
 /* ---------------- CONFIGURACIÓN ---------------- */
-export function Configuracion({ toast }: { toast: Toast }) {
-  const [cfg, setCfg] = useState<Record<Status, { min: string; max: string; color: string }>>({
-    normal: { min: '31', max: '', color: STATUS.normal.hex }, atencion: { min: '16', max: '30', color: STATUS.atencion.hex },
-    proxima: { min: '8', max: '15', color: STATUS.proxima.hex }, critica: { min: '0', max: '7', color: STATUS.critica.hex }, vencida: { min: '', max: '-1', color: STATUS.vencida.hex },
-  })
-  const [modal, setModal] = useState(false)
-  const set = (s: Status, k: 'min' | 'max' | 'color', v: string) => setCfg({ ...cfg, [s]: { ...cfg[s], [k]: v } })
-  const desc = (s: Status) => s === 'normal' ? 'Más de 30 días' : s === 'vencida' ? 'Menos de 0 días' : STATUS[s].range
-  return (
-    <div className="page-in space-y-6">
-      <div><h2 className="text-2xl font-semibold">Configuración</h2></div>
-      <Card>
-        <CardHeader title="Estados" sub="Rangos de días restantes y color de cada estado" right={<Btn variant="primary" onClick={() => toast('Configuración de estados guardada')}>Guardar</Btn>} />
-        <table className="w-full"><thead><tr><Th>Estado</Th><Th>Regla actual</Th><Th>Desde (días)</Th><Th>Hasta (días)</Th><Th>Color</Th></tr></thead>
-          <tbody className="divide-y divide-line">{STATUS_ORDER.slice().reverse().map((s) => (
-            <tr key={s}><td className={tdCls}><StatusBadge s={s} /></td><td className={cx(tdCls, 'text-muted')}>{desc(s)}</td>
-              <td className={tdCls}><input className={cx(inputCls, 'w-24')} value={cfg[s].min} disabled={s === 'vencida'} placeholder="—" onChange={(e) => set(s, 'min', e.target.value)} /></td>
-              <td className={tdCls}><input className={cx(inputCls, 'w-24')} value={cfg[s].max} disabled={s === 'normal'} placeholder="—" onChange={(e) => set(s, 'max', e.target.value)} /></td>
-              <td className={tdCls}><label className="inline-flex cursor-pointer items-center gap-2.5"><input type="color" value={cfg[s].color} onChange={(e) => set(s, 'color', e.target.value)} className="size-9 cursor-pointer rounded-lg border border-line bg-white p-0.5" /><span className="font-mono text-xs uppercase text-muted">{cfg[s].color}</span></label></td></tr>))}
-          </tbody></table>
-      </Card>
-      <Card className="overflow-hidden">
-        <CardHeader title="Usuarios" right={<Btn variant="primary" onClick={() => setModal(true)}><Plus className="size-4" />Agregar usuario</Btn>} />
-        <table className="w-full"><thead><tr><Th>Nombre</Th><Th>Usuario</Th><Th>Rol</Th><Th>Estado</Th><Th>Último acceso</Th></tr></thead>
-          <tbody className="divide-y divide-line">{USUARIOS.map((u) => <tr key={u[1]} className="hover:bg-canvas"><td className={cx(tdCls, 'font-medium')}>{u[0]}</td><td className={cx(tdCls, 'font-mono text-[13px]')}>{u[1]}</td><td className={tdCls}>{u[2]}</td>
-            <td className={tdCls}><span className={cx('rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset', u[3] === 'Activo' ? 'bg-[#e6f4ec] text-[#256b45] ring-[#bfe1cd]' : 'bg-[#e4e7ec] text-[#2c3542] ring-[#c5cad3]')}>{u[3]}</span></td><td className={cx(tdCls, 'tnum text-muted')}>{u[4]}</td></tr>)}</tbody></table>
-      </Card>
-      {modal && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-ink/40 p-6" onClick={() => setModal(false)}>
-          <div className="w-full max-w-md" onClick={(e) => e.stopPropagation()}>
-            <Card>
-              <CardHeader title="Agregar usuario" right={<button onClick={() => setModal(false)}><X className="size-5 text-muted" /></button>} />
-              <div className="space-y-4 p-5">
-                <label className="block text-sm font-medium">Nombre completo<input className={cx(inputCls, 'mt-1.5 font-normal')} /></label>
-                <label className="block text-sm font-medium">Usuario<input className={cx(inputCls, 'mt-1.5 font-normal')} /></label>
-                <label className="block text-sm font-medium">Rol<select className={cx(inputCls, 'mt-1.5 font-normal')}><option>Operador</option><option>Consulta</option><option>Administrador</option></select></label>
-              </div>
-              <div className="flex justify-end gap-2 border-t border-line p-4"><Btn onClick={() => setModal(false)}>Cancelar</Btn><Btn variant="primary" onClick={() => { setModal(false); toast('Usuario agregado (simulado)') }}>Agregar</Btn></div>
-            </Card>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
+export function Configuracion() { return <div className="page-in space-y-5"><div><h2 className="text-2xl font-semibold">Configuración</h2></div><Card className="p-6"><CardHeader title="Administración no disponible" /><p className="text-sm text-muted">Esta aplicación no cuenta con una API para consultar o modificar rangos de garantías ni administrar usuarios. No se muestran datos de demostración como información operativa.</p></Card></div> }

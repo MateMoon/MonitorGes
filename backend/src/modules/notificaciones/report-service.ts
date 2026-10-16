@@ -23,7 +23,7 @@ export interface ReportDeliveryStore {
 export type ReportClaimResult = "claimed" | "deferred" | "terminal" | "already_sent" | "recipient_changed" | "attempts_exhausted" | "permanent_failure";
 
 export interface ReportMailer {
-  send(message: { to: string; subject: string; text: string }): Promise<{ messageId?: string }>;
+  send(message: { to: string; subject: string; text: string; html?: string; headers?: Record<string, string> }): Promise<{ messageId?: string }>;
 }
 
 const PRIORITY: Record<GuaranteeStatus, number> = {
@@ -59,6 +59,34 @@ export function formatGuaranteeReport(rows: ReportRow[], fechaInforme: string): 
   return lines.join("\n");
 }
 
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  })[character]!);
+}
+
+export function formatGuaranteeReportHtml(rows: ReportRow[], fechaInforme: string): string {
+  const rowMarkup = rows.length
+    ? rows.map((row) => {
+      const daysLabel = row.diasRestantes < 0
+        ? `${Math.abs(row.diasRestantes)} día(s) vencida`
+        : `${row.diasRestantes} día(s) restantes`;
+      return `<tr><td style="padding:12px;border-bottom:1px solid #e5e7eb;font-weight:600">${escapeHtml(row.estado.toUpperCase())}</td><td style="padding:12px;border-bottom:1px solid #e5e7eb">${escapeHtml(row.nombreGarantia)}</td><td style="padding:12px;border-bottom:1px solid #e5e7eb;white-space:nowrap">${escapeHtml(row.fechaLimite)}</td><td style="padding:12px;border-bottom:1px solid #e5e7eb">${escapeHtml(daysLabel)}</td><td style="padding:12px;border-bottom:1px solid #e5e7eb">${escapeHtml(row.responsable)}</td></tr>`;
+    }).join("")
+    : `<tr><td colspan="5" style="padding:16px;color:#475569">No hay garantías vencidas ni próximas a vencer en los rangos configurados.</td></tr>`;
+  return `<!doctype html><html><body style="margin:0;padding:24px;background:#f1f5f9;font-family:Arial,Helvetica,sans-serif;color:#0f172a"><main style="max-width:900px;margin:0 auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden"><header style="padding:24px;background:#0f3b5d;color:#ffffff"><p style="margin:0 0 8px;font-size:12px;letter-spacing:1px;text-transform:uppercase">Monitor de Garantías GES</p><h1 style="margin:0;font-size:22px">Informe diario de garantías GES</h1><p style="margin:8px 0 0;color:#dbeafe">${escapeHtml(fechaInforme)}</p></header><section style="padding:20px 24px"><p style="margin:0 0 16px;font-size:16px;font-weight:600">Garantías vencidas o dentro de los próximos 30 días: ${rows.length}</p><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;text-align:left;font-size:14px"><thead><tr style="background:#f8fafc"><th style="padding:12px;border-bottom:2px solid #cbd5e1">Estado</th><th style="padding:12px;border-bottom:2px solid #cbd5e1">Garantía</th><th style="padding:12px;border-bottom:2px solid #cbd5e1">Fecha límite</th><th style="padding:12px;border-bottom:2px solid #cbd5e1">Plazo</th><th style="padding:12px;border-bottom:2px solid #cbd5e1">Responsable</th></tr></thead><tbody>${rowMarkup}</tbody></table></div><p style="margin:20px 0 0;color:#64748b;font-size:12px">Este informe usa la fecha civil de America/Santiago. No incluye RUT, nombre ni diagnóstico de pacientes.</p></section></main></body></html>`;
+}
+
+function reportMessage(rows: ReportRow[], fechaInforme: string, subject: string, automatic: boolean) {
+  return {
+    subject,
+    text: formatGuaranteeReport(rows, fechaInforme),
+    html: formatGuaranteeReportHtml(rows, fechaInforme),
+    // Auto-Submitted marks scheduler-generated mail; the explicitly invoked manual test omits it.
+    ...(automatic ? { headers: { "Auto-Submitted": "auto-generated" } } : {}),
+  };
+}
+
 export async function deliverDailyReport(options: {
   fechaInforme: string;
   rows: ReportGuarantee[];
@@ -69,7 +97,6 @@ export async function deliverDailyReport(options: {
   onPersistenceError?: (error: unknown) => void;
 }): Promise<{ eligible: number; sent: number; skipped: number; failed: number; uncertain: number; terminal: number; skipReasons: Record<string, number> }> {
   const report = buildGuaranteeReport(options.rows, options.fechaInforme);
-  const text = formatGuaranteeReport(report, options.fechaInforme);
   const result = { eligible: report.length, sent: 0, skipped: 0, failed: 0, uncertain: 0, terminal: 0, skipReasons: {} as Record<string, number> };
 
   for (const recipient of options.recipients) {
@@ -84,9 +111,8 @@ export async function deliverDailyReport(options: {
     let sent: { messageId?: string };
     try {
       sent = await options.mailer.send({
+        ...reportMessage(report, options.fechaInforme, `Informe diario de garantías GES — ${options.fechaInforme}`, true),
         to: recipient,
-        subject: `Informe diario de garantías GES — ${options.fechaInforme}`,
-        text,
       });
     } catch (error) {
       const transport = error as { code?: unknown; responseCode?: unknown; operation?: unknown };
@@ -152,9 +178,8 @@ export async function sendManualConfiguredReport(options: {
   if (!recipient) return { configured: false, acceptedBySmtp: false, eligible: 0 };
   const rows = buildGuaranteeReport(options.rows, options.fechaInforme);
   const result = await options.mailer.send({
+    ...reportMessage(rows, options.fechaInforme, `Informe diario de garantías GES — ${options.fechaInforme} (prueba manual)`, false),
     to: recipient,
-    subject: `Informe diario de garantías GES — ${options.fechaInforme} (prueba manual)`,
-    text: formatGuaranteeReport(rows, options.fechaInforme),
   });
   return { configured: true, acceptedBySmtp: true, eligible: rows.length, ...(result.messageId ? { messageId: result.messageId } : {}) };
 }

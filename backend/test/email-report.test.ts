@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { readEmailAutomationConfig, timeInSantiago } from "../src/modules/notificaciones/automation-config.js";
-import { buildGuaranteeReport, deliverConfiguredDailyReport, deliverDailyReport, sendManualConfiguredReport, type ReportDeliveryStore } from "../src/modules/notificaciones/report-service.js";
+import { buildGuaranteeReport, deliverConfiguredDailyReport, deliverDailyReport, formatGuaranteeReport, formatGuaranteeReportHtml, sendManualConfiguredReport, type ReportDeliveryStore } from "../src/modules/notificaciones/report-service.js";
 import { isTransientEmailFailure, MAX_EMAIL_ATTEMPTS } from "../src/modules/notificaciones/email-retry-policy.js";
 
 const today = "2026-10-13";
@@ -57,6 +57,30 @@ describe("informes diarios de correo", () => {
     expect(report.map(({ id }) => id)).toEqual(["expired-1", "c-2", "c-7", "attention"]);
   });
 
+  it("mantiene las mismas garantías y el mismo orden en las versiones de texto y HTML", () => {
+    const rows = buildGuaranteeReport([sample("z", 7), sample("expired", -1), sample("soon", 15)], today);
+    const text = formatGuaranteeReport(rows, today);
+    const html = formatGuaranteeReportHtml(rows, today);
+    const textOrder = rows.map(({ nombreGarantia }) => text.indexOf(nombreGarantia));
+    const htmlOrder = rows.map(({ nombreGarantia }) => html.indexOf(nombreGarantia));
+    expect(htmlOrder.every((position) => position >= 0)).toBe(true);
+    expect(textOrder).toEqual([...textOrder].sort((a, b) => a - b));
+    expect(htmlOrder).toEqual([...htmlOrder].sort((a, b) => a - b));
+  });
+
+  it("escapa todos los valores dinámicos del HTML, incluidos valores vacíos", () => {
+    const row = {
+      ...buildGuaranteeReport([sample("x", 1)], today)[0],
+      nombreGarantia: `A&B <C> "D" 'E'`,
+      responsable: "",
+    };
+    const html = formatGuaranteeReportHtml([row], `2026<&>\"'`);
+    expect(html).toContain("A&amp;B &lt;C&gt; &quot;D&quot; &#39;E&#39;");
+    expect(html).toContain("2026&lt;&amp;&gt;&quot;&#39;");
+    expect(html).not.toContain(`A&B <C> "D" 'E'`);
+    expect(html).toContain("<td style=\"padding:12px;border-bottom:1px solid #e5e7eb\"></td>");
+  });
+
   it("omite un destinatario que ya recibió el informe y conserva el motivo", async () => {
     const store = memoryStore();
     const mailer = { send: vi.fn().mockResolvedValue({ messageId: "fictitious-id" }) };
@@ -64,6 +88,7 @@ describe("informes diarios de correo", () => {
     expect(await deliverDailyReport(options)).toMatchObject({ sent: 1, skipped: 0, failed: 0 });
     expect(await deliverDailyReport(options)).toMatchObject({ sent: 0, skipped: 1, failed: 0, skipReasons: { already_sent: 1 } });
     expect(mailer.send).toHaveBeenCalledTimes(1);
+    expect(mailer.send.mock.calls[0][0]).toMatchObject({ html: expect.any(String), text: expect.any(String), headers: { "Auto-Submitted": "auto-generated" } });
   });
 
   it("reserva una sola ejecución cuando dos procesos compiten por la misma fecha", async () => {
@@ -137,6 +162,10 @@ describe("informes diarios de correo", () => {
 
   it("permite una prueba manual con el destinatario de Alertas sin reservar el envío diario", async () => {
     const send = vi.fn().mockResolvedValue({ messageId: "manual-test-id" });
+    const store = memoryStore();
+    const claim = vi.spyOn(store, "claim");
+    const sent = vi.spyOn(store, "sent");
+    const failed = vi.spyOn(store, "failed");
     let configured = "alertas@example.test";
     const result = await sendManualConfiguredReport({
       fechaInforme: today,
@@ -148,12 +177,24 @@ describe("informes diarios de correo", () => {
     expect(send).toHaveBeenCalledTimes(1);
     expect(send.mock.calls[0][0].to).toBe("alertas@example.test");
     expect(send.mock.calls[0][0].subject).toContain("prueba manual");
+    expect(send.mock.calls[0][0]).toMatchObject({ html: expect.any(String), text: expect.any(String) });
+    expect(send.mock.calls[0][0].headers).toBeUndefined();
+    expect(claim).not.toHaveBeenCalled();
+    expect(sent).not.toHaveBeenCalled();
+    expect(failed).not.toHaveBeenCalled();
     configured = "";
     const missing = await sendManualConfiguredReport({
       fechaInforme: today, rows: [], getRecipient: async () => configured || null, mailer: { send },
     });
     expect(missing).toMatchObject({ configured: false, acceptedBySmtp: false });
     expect(send).toHaveBeenCalledTimes(1);
+    const automaticSend = vi.fn().mockResolvedValue({ messageId: "automatic-test-id" });
+    const automatic = await deliverDailyReport({
+      fechaInforme: today, rows: [sample("automatic", 1)], recipients: ["alertas@example.test"],
+      mailer: { send: automaticSend }, store,
+    });
+    expect(automatic).toMatchObject({ sent: 1 });
+    expect(automaticSend).toHaveBeenCalledTimes(1);
   });
 
   it("deshabilita por defecto y valida la hora", () => {

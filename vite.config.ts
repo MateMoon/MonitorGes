@@ -30,20 +30,30 @@ react(),
         '@': path.resolve(__dirname, './src'),
       },
     },
-    server: {
-      host: process.env.FIGMA_DEV_SERVER_HOST || '0.0.0.0',
-      port: parseInt(process.env.PORT || '8443'),
-      strictPort: true,
-      watch: {
-        ignored: [
-          '**/.figma/**',
-],
+      server: {
+        host: process.env.FIGMA_DEV_SERVER_HOST || '0.0.0.0',
+        port: parseInt(process.env.PORT || '8443'),
+        strictPort: true,
+        proxy: {
+          '/api': {
+            target: 'http://localhost:3001',
+            changeOrigin: true,
+          },
+        },
+        watch: {
+          ignored: ['**/.figma/**'],
+        },
       },
-    },
-    preview: {
-      host: process.env.FIGMA_DEV_SERVER_HOST || '0.0.0.0',
-      port: parseInt(process.env.PORT || '8443'),
-    },
+      preview: {
+        host: process.env.FIGMA_DEV_SERVER_HOST || '0.0.0.0',
+        port: parseInt(process.env.PORT || '8443'),
+        proxy: {
+          '/api': {
+            target: 'http://localhost:3001',
+            changeOrigin: true,
+          },
+        },
+      },
   }
 })
 

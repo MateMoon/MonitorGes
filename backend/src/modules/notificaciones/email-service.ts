@@ -15,6 +15,14 @@ export interface EmailMessage {
   subject: string;
   text: string;
   html?: string;
+  headers?: Record<string, string>;
+}
+
+const FROM_NAME = "Monitor de Garantías GES";
+
+function configuredMailbox(from: string): string {
+  const bracketedAddress = from.match(/<\s*([^<>]+?)\s*>/);
+  return (bracketedAddress?.[1] ?? from).trim();
 }
 
 export class EmailConfigurationError extends Error {
@@ -99,11 +107,12 @@ export function createEmailService(config: EmailConfig) {
     async send(message: EmailMessage): Promise<{ messageId?: string }> {
       try {
         const result = await transporter.sendMail({
-          from: config.from,
+          from: { name: FROM_NAME, address: configuredMailbox(config.from) },
           to: message.to,
           subject: message.subject,
           text: message.text,
           ...(message.html ? { html: message.html } : {}),
+          ...(message.headers ? { headers: message.headers } : {}),
         });
         return result.messageId ? { messageId: result.messageId } : {};
       } catch (error) {

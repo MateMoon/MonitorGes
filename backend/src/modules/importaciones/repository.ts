@@ -19,6 +19,7 @@ export async function listImports(query: ImportHistoryQuery) {
         registrosActualizados: true,
         registrosSinCambios: true,
         registrosConError: true,
+        usuario: { select: { nombre: true, username: true } },
       },
     }),
   ]);

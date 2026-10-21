@@ -1,6 +1,6 @@
 import { readEmailConfig, createEmailService } from "./email-service.js";
 import { readEmailAutomationConfig, timeInSantiago, AUTOMATION_TIME_ZONE, type EmailAutomationConfig } from "./automation-config.js";
-import { emailReportDeliveryStore, findConfiguredEmailRecipient, findReportGuarantees } from "./email-report-repository.js";
+import { emailReportDeliveryStore, findConfiguredEmailRecipients, findReportGuarantees } from "./email-report-repository.js";
 import { deliverConfiguredDailyReport, type ReportDeliveryStore, type ReportMailer } from "./report-service.js";
 
 const CHECK_INTERVAL_MS = 30_000;
@@ -18,7 +18,7 @@ export interface EmailSchedulerDependencies {
   checkIntervalMs?: number;
   retryIntervalMs?: number;
   findRows?: typeof findReportGuarantees;
-  getRecipient?: typeof findConfiguredEmailRecipient;
+  getRecipients?: typeof findConfiguredEmailRecipients;
   mailer?: ReportMailer;
   store?: ReportDeliveryStore;
 }
@@ -36,7 +36,7 @@ export function startEmailReportScheduler(logger: SchedulerLogger, dependencies:
 
   const mailer = dependencies.mailer ?? createEmailService(readEmailConfig(process.env, { requireTestRecipient: false }));
   const findRows = dependencies.findRows ?? findReportGuarantees;
-  const getRecipient = dependencies.getRecipient ?? findConfiguredEmailRecipient;
+  const getRecipients = dependencies.getRecipients ?? findConfiguredEmailRecipients;
   const store = dependencies.store ?? emailReportDeliveryStore;
   const now = dependencies.now ?? (() => new Date());
   const retryIntervalMs = dependencies.retryIntervalMs ?? RETRY_INTERVAL_MS;
@@ -81,7 +81,7 @@ export function startEmailReportScheduler(logger: SchedulerLogger, dependencies:
         const result = await deliverConfiguredDailyReport({
           fechaInforme: local.date,
           rows,
-          getRecipient,
+          getRecipients,
           mailer,
           store,
           onError: (_recipient, details) => logger.warn({ date: local.date, code: details.code, responseCode: details.responseCode, retryable: details.retryable }, details.retryable ? "Falló el envío transitorio del informe; se reintentará según la política." : "Falló el envío del informe por un error permanente; no habrá más reintentos hoy."),

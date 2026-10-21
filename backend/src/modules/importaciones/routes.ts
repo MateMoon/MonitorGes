@@ -43,7 +43,7 @@ export async function importValidationRoutes(app: FastifyInstance) {
   app.post("/", { preHandler: requireRoles("ADMIN", "PROFESIONAL") }, async (request, reply) => {
     try {
       const { buffer, filename } = await uploadedFile(request);
-      return reply.code(201).send({ data: await importWorkbook(buffer, filename) });
+      return reply.code(201).send({ data: await importWorkbook(buffer, filename, request.authUser!.id) });
     } catch (error) {
       return uploadError(error, reply, request, error instanceof WorkbookInputError ? 400 : 500);
     }

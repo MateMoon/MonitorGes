@@ -65,13 +65,13 @@ describe("servicio de correo SMTP", () => {
 
     await service.verify();
     const result = await service.send({
-      to: "qa@example.test", subject: "Asunto", text: "Mensaje de prueba", html: "<p>Mensaje</p>",
+      to: ["qa@example.test", "second@example.test"], subject: "Asunto", text: "Mensaje de prueba", html: "<p>Mensaje</p>",
       headers: { "Auto-Submitted": "auto-generated" },
     });
     expect(result).toEqual({ messageId: "test-message-id" });
     expect(smtp.sendMail).toHaveBeenCalledWith({
       from: { name: "Monitor de Garantías GES", address: "monitor@example.test" },
-      to: "qa@example.test", subject: "Asunto", text: "Mensaje de prueba", html: "<p>Mensaje</p>",
+      to: ["qa@example.test", "second@example.test"], subject: "Asunto", text: "Mensaje de prueba", html: "<p>Mensaje</p>",
       headers: { "Auto-Submitted": "auto-generated" },
     });
   });

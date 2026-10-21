@@ -6,6 +6,7 @@ import multipart from '@fastify/multipart';
 import { importValidationRoutes } from './modules/importaciones/routes.js';
 import { notificationRoutes } from './modules/notificaciones/routes.js';
 import { authRoutes } from './modules/auth/routes.js';
+import { userRoutes } from './modules/usuarios/routes.js';
 
 export function buildApp() {
   const app = Fastify({ logger: true });
@@ -30,6 +31,7 @@ export function buildApp() {
   });
   app.register(multipart, { limits: { fileSize: 10 * 1024 * 1024, files: 1, parts: 1 } });
   app.register(authRoutes, { prefix: '/api/auth' });
+  app.register(userRoutes, { prefix: '/api/usuarios' });
   app.register(guaranteeRoutes, { prefix: '/api/garantias' });
   app.register(importValidationRoutes, { prefix: '/api/importaciones' });
   app.register(dashboardRoutes, { prefix: '/api/dashboard' });

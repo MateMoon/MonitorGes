@@ -1,6 +1,6 @@
 import { prisma } from "../../db/prisma.js";
 import type { ReportDeliveryStore, ReportGuarantee } from "./report-service.js";
-import { emailAddressSchema } from "./email-config-schema.js";
+import { emailRecipientListSchema } from "./email-config-schema.js";
 import { ABANDONED_EMAIL_ATTEMPT_MS, EMAIL_RETRY_DELAY_MS, MAX_EMAIL_ATTEMPTS, isStoredFailureTransient } from "./email-retry-policy.js";
 
 export async function findReportGuarantees(fechaInforme: string): Promise<ReportGuarantee[]> {
@@ -13,13 +13,16 @@ export async function findReportGuarantees(fechaInforme: string): Promise<Report
   return rows.map((row) => ({ ...row, fechaLimite: row.fechaLimite.toISOString().slice(0, 10) }));
 }
 
-export async function findConfiguredEmailRecipient(): Promise<string | null> {
+export async function findConfiguredEmailRecipients(): Promise<string[]> {
   const configuration = await prisma.configuracionNotificaciones.findUnique({
     where: { id: "global" },
-    select: { emailDestinatario: true },
+    select: { emailDestinatario: true, emailDestinatarios: true },
   });
-  const parsed = emailAddressSchema.safeParse(configuration?.emailDestinatario ?? "");
-  return parsed.success ? parsed.data.toLowerCase() : null;
+  const candidates = configuration?.emailDestinatarios.length
+    ? configuration.emailDestinatarios
+    : configuration?.emailDestinatario ? [configuration.emailDestinatario] : [];
+  const parsed = emailRecipientListSchema.safeParse(candidates);
+  return parsed.success ? parsed.data : [];
 }
 
 export const emailReportDeliveryStore: ReportDeliveryStore = {

@@ -1,14 +1,14 @@
 import "dotenv/config";
 import { prisma } from "../src/db/prisma.js";
 import { timeInSantiago } from "../src/modules/notificaciones/automation-config.js";
-import { findConfiguredEmailRecipient, findReportGuarantees } from "../src/modules/notificaciones/email-report-repository.js";
+import { findConfiguredEmailRecipients, findReportGuarantees } from "../src/modules/notificaciones/email-report-repository.js";
 import { createEmailService, EmailConfigurationError, EmailTransportError, readEmailConfig } from "../src/modules/notificaciones/email-service.js";
 import { sendManualConfiguredReport } from "../src/modules/notificaciones/report-service.js";
 
 async function main() {
   const emailConfig = readEmailConfig(process.env, { requireTestRecipient: false });
-  const recipient = await findConfiguredEmailRecipient();
-  if (!recipient) {
+  const recipients = await findConfiguredEmailRecipients();
+  if (recipients.length === 0) {
     throw new Error("No hay un destinatario válido guardado en la configuración de Alertas.");
   }
   const mailer = createEmailService(emailConfig);
@@ -18,7 +18,7 @@ async function main() {
   const result = await sendManualConfiguredReport({
     fechaInforme,
     rows,
-    getRecipient: async () => recipient,
+    getRecipients: async () => recipients,
     mailer,
   });
 

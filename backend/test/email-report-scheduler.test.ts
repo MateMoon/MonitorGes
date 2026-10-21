@@ -39,14 +39,14 @@ describe("scheduler de informes", () => {
     const send = vi.fn().mockResolvedValue({ messageId: "test-id" });
     const scheduler = startEmailReportScheduler(logger, {
       config: { enabled: true, time: "08:00" },
-      mailer: { send }, store: storeFake(), findRows: async () => [row], getRecipient: async () => "qa@example.test",
+      mailer: { send }, store: storeFake(), findRows: async () => [row], getRecipients: async () => ["qa@example.test", "second@example.test"],
     });
     await settle();
     expect(send).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(60 * 60_000);
     await settle();
     expect(send).toHaveBeenCalledTimes(1);
-    expect(send.mock.calls[0][0].to).toBe("qa@example.test");
+    expect(send.mock.calls[0][0].to).toEqual(["qa@example.test", "second@example.test"]);
     await scheduler.stop();
   });
 
@@ -57,7 +57,7 @@ describe("scheduler de informes", () => {
     const store = storeFake();
     const scheduler = startEmailReportScheduler(logger, {
       config: { enabled: true, time: "08:00" },
-      mailer: { send }, store, findRows: async () => [row], getRecipient: async () => "qa@example.test",
+      mailer: { send }, store, findRows: async () => [row], getRecipients: async () => ["qa@example.test", "second@example.test"],
       checkIntervalMs: 30_000,
     });
     await settle();
@@ -85,7 +85,7 @@ describe("scheduler de informes", () => {
       mailer: { send },
       store: storeFake([["2026-10-13", "failed"]]),
       findRows: async () => [row],
-      getRecipient: async () => "qa@example.test",
+      getRecipients: async () => ["qa@example.test", "second@example.test"],
     });
     await settle();
     expect(send).toHaveBeenCalledTimes(1);
@@ -99,7 +99,7 @@ describe("scheduler de informes", () => {
     const send = vi.fn().mockResolvedValue({ messageId: "restart-id" });
     const dependencies = {
       config: { enabled: true, time: "08:00" },
-      mailer: { send }, store, findRows: async () => [row], getRecipient: async () => "qa@example.test",
+      mailer: { send }, store, findRows: async () => [row], getRecipients: async () => ["qa@example.test", "second@example.test"],
     };
     const firstRun = startEmailReportScheduler(logger, dependencies);
     await vi.advanceTimersByTimeAsync(60 * 60_000);
@@ -122,7 +122,7 @@ describe("scheduler de informes", () => {
       .mockResolvedValue({ messageId: "test-id" });
     const scheduler = startEmailReportScheduler(logger, {
       config: { enabled: true, time: "08:00" }, retryIntervalMs: 300_000,
-      mailer: { send }, store: storeFake(), findRows: async () => [row], getRecipient: async () => "qa@example.test",
+      mailer: { send }, store: storeFake(), findRows: async () => [row], getRecipients: async () => ["qa@example.test", "second@example.test"],
     });
     await settle();
     expect(send).not.toHaveBeenCalled();
@@ -144,7 +144,7 @@ describe("scheduler de informes", () => {
     const send = vi.fn(async () => { await pending; return { messageId: "test-id" }; });
     const scheduler = startEmailReportScheduler(logger, {
       config: { enabled: true, time: "08:00" }, retryIntervalMs: 300_000,
-      mailer: { send }, store: storeFake(), findRows: async () => [row], getRecipient: async () => recipient,
+      mailer: { send }, store: storeFake(), findRows: async () => [row], getRecipients: async () => recipient ? [recipient] : [],
     });
     await settle();
     expect(send).not.toHaveBeenCalled();
@@ -172,7 +172,7 @@ describe("scheduler de informes", () => {
     const findRows = vi.fn(async () => { await pending; return [row]; });
     const scheduler = startEmailReportScheduler(logger, {
       config: { enabled: true, time: "08:00" }, checkIntervalMs: 100,
-      mailer: { send: vi.fn().mockResolvedValue({}) }, store: storeFake(), findRows, getRecipient: async () => "qa@example.test",
+      mailer: { send: vi.fn().mockResolvedValue({}) }, store: storeFake(), findRows, getRecipients: async () => ["qa@example.test", "second@example.test"],
     });
     await vi.advanceTimersByTimeAsync(60 * 60_000 + 500);
     expect(findRows).toHaveBeenCalledTimes(1);

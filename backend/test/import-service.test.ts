@@ -121,7 +121,7 @@ describe("importación persistente", () => {
     expect(history.json()).toMatchObject({ data: [expect.objectContaining({ id: importData.id, nombreArchivo: "nomina.xlsx", registrosNuevos: 1 })], pagination: { total: 1, page: 1, limit: 25 } });
   });
   it("crea paciente, garantía e historial para un Excel válido", async () => {
-    const result = await importWorkbook(await makeXlsx([baseRow]), "nomina.xlsx");
+    const result = await importWorkbook(await makeXlsx([baseRow]), "nomina.xlsx", "professional-1");
     expect(memory.patients).toHaveLength(1);
     expect(memory.guarantees).toHaveLength(1);
     expect(result).toMatchObject({ estado: "COMPLETADA", filasLeidas: 1, registrosNuevos: 1, registrosActualizados: 0, registrosSinCambios: 0, registrosConError: 0 });
@@ -131,7 +131,7 @@ describe("importación persistente", () => {
   it("reutiliza pacientes y permite varias garantías para el mismo RUT", async () => {
     seededPatient();
     const second = [...baseRow]; second[5] = "15/01/2027"; second[7] = "Garantía B";
-    const result = await importWorkbook(await makeXlsx([baseRow, second]), "dos-garantias.xlsx");
+    const result = await importWorkbook(await makeXlsx([baseRow, second]), "dos-garantias.xlsx", "professional-1");
     expect(memory.patients).toHaveLength(1);
     expect(memory.guarantees).toHaveLength(2);
     expect(result.registrosNuevos).toBe(2);
@@ -139,8 +139,8 @@ describe("importación persistente", () => {
 
   it("reimportar la misma planilla no duplica una coincidencia inequívoca", async () => {
     const file = await makeXlsx([baseRow]);
-    await importWorkbook(file, "repetida.xlsx");
-    const result = await importWorkbook(file, "repetida.xlsx");
+    await importWorkbook(file, "repetida.xlsx", "professional-1");
+    const result = await importWorkbook(file, "repetida.xlsx", "professional-1");
     expect(memory.guarantees).toHaveLength(1);
     expect(result).toMatchObject({ registrosNuevos: 0, registrosSinCambios: 1, registrosConError: 0 });
   });
@@ -149,7 +149,7 @@ describe("importación persistente", () => {
     const patientId = seededPatient();
     seededGuarantee(patientId);
     const updated = [...baseRow]; updated[5] = "15/01/2027"; updated[8] = "Centro B";
-    const result = await importWorkbook(await makeXlsx([updated]), "actualizacion.xlsx");
+    const result = await importWorkbook(await makeXlsx([updated]), "actualizacion.xlsx", "professional-1");
     expect(result.registrosActualizados).toBe(1);
     expect(memory.guarantees[0].fechaLimite.toISOString().slice(0, 10)).toBe("2027-01-15");
     expect(memory.guarantees[0].responsable).toBe("Centro B");
@@ -160,7 +160,7 @@ describe("importación persistente", () => {
     const patientId = seededPatient();
     seededGuarantee(patientId); seededGuarantee(patientId, { id: "warranty-2", responsable: "Centro alternativo" });
     const changed = [...baseRow]; changed[5] = "15/01/2027"; changed[8] = "No aplicar";
-    const result = await importWorkbook(await makeXlsx([changed]), "ambigua.xlsx");
+    const result = await importWorkbook(await makeXlsx([changed]), "ambigua.xlsx", "professional-1");
     expect(result).toMatchObject({ estado: "FALLIDA", registrosConError: 1 });
     expect(memory.guarantees.map((g) => g.responsable)).toEqual(["Centro A", "Centro alternativo"]);
     expect(memory.errors[0].codigo).toBe("AMBIGUOUS_MATCH");
@@ -168,7 +168,7 @@ describe("importación persistente", () => {
 
   it("registra las filas con RUT inválido sin crear pacientes ni garantías", async () => {
     const invalid = [...baseRow]; invalid[2] = "9";
-    const result = await importWorkbook(await makeXlsx([invalid]), "rut-invalido.xlsx");
+    const result = await importWorkbook(await makeXlsx([invalid]), "rut-invalido.xlsx", "professional-1");
     expect(result).toMatchObject({ estado: "FALLIDA", filasLeidas: 1, registrosConError: 1 });
     expect(memory.patients).toHaveLength(0);
     expect(memory.guarantees).toHaveLength(0);
@@ -177,7 +177,7 @@ describe("importación persistente", () => {
 
   it("revierte una fila fallida de base de datos y registra el error", async () => {
     memory.failGuaranteeCreate = true;
-    const result = await importWorkbook(await makeXlsx([baseRow]), "error-db.xlsx");
+    const result = await importWorkbook(await makeXlsx([baseRow]), "error-db.xlsx", "professional-1");
     expect(result).toMatchObject({ estado: "FALLIDA", registrosNuevos: 0, registrosConError: 1 });
     expect(memory.patients).toHaveLength(0);
     expect(memory.guarantees).toHaveLength(0);

@@ -153,5 +153,6 @@ model IntentoEnvioCorreo {
 model ConfiguracionNotificaciones {
   id                 String   @id
   emailDestinatario  String?
+  emailDestinatarios String[] @default([])
   updatedAt          DateTime @updatedAt
 }

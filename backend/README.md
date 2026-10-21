@@ -93,11 +93,11 @@ El script muestra códigos/operaciones de transporte cuando están disponibles, 
 
 ## Configuración del destinatario desde Alertas
 
-La interfaz consulta y actualiza `GET /api/notificaciones/configuracion-correo` y `PUT /api/notificaciones/configuracion-correo` con `{ "email": "qa@example.test" }`. La dirección se valida, normaliza en minúsculas y persiste en la fila singleton `ConfiguracionNotificaciones` (`id=global`). No hay inicialización desde `EMAIL_REPORT_TO`: al instalar la migración el destinatario queda vacío, y el programador no envía nada hasta que exista una dirección válida guardada. Guardar no envía un correo.
+La interfaz consulta `GET /api/notificaciones/configuracion-correo`, que devuelve `emails` y el campo legado `email` (el primer destinatario). `PUT` acepta `{ "emails": ["uno@example.test", "dos@example.test"] }`; tambien acepta `{ "email": "uno@example.test" }` para clientes anteriores. Las direcciones se recortan, convierten a minusculas y deduplican sin distinguir mayusculas. Se admiten hasta 50 direcciones y una lista vacia pausa los envios. Solo ADMIN puede guardar cambios. La migracion `20261021120000_multiple_notification_recipients` agrega la lista y copia alli el destinatario anterior; conserva la columna escalar para compatibilidad. La migracion esta preparada y aun debe aplicarse antes de desplegar esta version. Guardar no envia un correo.
 
 La autenticacion de servidor se describe en la seccion siguiente. Las rutas privadas ya exigen una sesion y los permisos se validan en Fastify.
 
-La reserva del informe es única por fecha `America/Santiago` y guarda el destinatario utilizado. El destinatario se lee de PostgreSQL al iniciar cada ejecución y queda fijado en la reserva. Si se cambia la dirección después de que ese día ya se reservó un informe, no se manda un segundo correo a la nueva dirección ese mismo día. Si el intento anterior falló y el destinatario no cambió, se reintenta cada cinco minutos; si cambió, los reintentos del día se detienen y la nueva dirección se usa desde la próxima fecha programada. Si el campo está vacío, la ejecución se omite y el programador vuelve a comprobarlo en cinco minutos. Así el cambio desde Alertas no dispara envíos accidentales.
+La reserva diaria guarda el conjunto de direcciones usado y solo permite una reserva por fecha. Si la lista cambia despues de reservar, el sistema no envia un segundo mensaje ese dia; los reintentos usan el mismo conjunto. Cuando la lista esta vacia, la ejecucion se omite.
 
 `fechaLimite` es una columna SQL `DATE NOT NULL`, por lo que no admite nulos; PostgreSQL valida la fecha almacenada. Filas con fecha nula o inválida no se pueden insertar en el esquema vigente. El cálculo del estado usa la fecha civil local y no la columna importada de días restantes.
 
@@ -126,7 +126,7 @@ Verifica la base y el nombre `monitor_garantias_qa` antes de ejecutar `prisma:de
 En QA puedes guardar primero `qa@example.test` desde Alertas con `AUTO_EMAIL_ENABLED=false` para comprobar solo la persistencia. Para probar SMTP de forma separada, define `EMAIL_TEST_TO` a una bandeja autorizada y ejecuta `npm run email:test`; esa prueba envía un correo real sin información de pacientes. Las pruebas automatizadas no envían correos reales.
 ## Informe automático diario de garantías
 
-El backend programa un informe diario independiente de las pantallas web. Usa la fecha civil de `America/Santiago` y la columna `Garantia.fechaLimite` de PostgreSQL; no usa los días restantes del Excel. Reutiliza los rangos existentes en `src/modules/garantias/status.ts`: vencida (menos de 0 días), crítica (0–7), próxima (8–15), atención (16–30) y normal (31 o más). El informe incluye vencidas y las que vencen dentro de 30 días, en orden de prioridad y luego por fecha límite. No incluye RUT, nombre ni diagnóstico del paciente.
+El backend programa un informe diario independiente de las pantallas web. Usa la fecha civil de `America/Santiago` y la columna `Garantia.fechaLimite` de PostgreSQL; no usa los días restantes del Excel. Reutiliza los rangos existentes en `src/modules/garantias/status.ts`: vencida (menos de 0 días), crítica (0–7), próxima (8–15), atención (16–30) y normal (31 o más). El informe incluye vencidas y las que vencen dentro de 30 días, en orden de prioridad (críticas, próximas, atención y vencidas al final) y luego por fecha límite. No incluye RUT, nombre ni diagnóstico del paciente.
 
 El envío está **deshabilitado por defecto**. Agrega estas variables a `backend/.env` para habilitarlo:
 
@@ -135,7 +135,7 @@ El envío está **deshabilitado por defecto**. Agrega estas variables a `backend
 | `AUTO_EMAIL_ENABLED` | `false` | Usa `true` para habilitar el programador. |
 | `AUTO_EMAIL_TIME` | `08:00` | Hora diaria en formato 24 horas, zona `America/Santiago`. |
 
-También deben estar configuradas las variables SMTP y `EMAIL_FROM`. `EMAIL_TEST_TO` se reserva exclusivamente para `npm run email:test`; el informe automático no lo consulta. `EMAIL_REPORT_TO` ya no es fuente operativa: el destinatario se administra en Alertas y se guarda en PostgreSQL. Si aún existe en tu `.env`, puedes retirarla cuando quieras; cambiarla no cambia el destinatario persistido.
+También deben estar configuradas las variables SMTP y `EMAIL_FROM`. `EMAIL_TEST_TO` se reserva exclusivamente para `npm run email:test`; el informe automático no lo consulta. `EMAIL_REPORT_TO` ya no es fuente operativa: la lista de destinatarios se administra en Alertas y se guarda en PostgreSQL. Si aún existe en tu `.env`, puedes retirarla cuando quieras; cambiarla no cambia la lista persistida.
 
 Aplica las migraciones pendientes y genera el cliente Prisma desde PowerShell en `backend`:
 
@@ -147,7 +147,7 @@ npm run build
 
 Para probar sin correo real, ejecuta `npm test`. Las pruebas de configuración y del informe usan mocks en memoria y no conectan a SMTP ni a una base PostgreSQL.
 
-Para enviar explícitamente un informe actual de prueba al destinatario guardado en Alertas, revisa primero que ese buzón sea controlado y ejecuta `npm run email:report:test` desde `backend`. El comando requiere la configuración SMTP y el destinatario global, verifica SMTP antes de enviar, y no usa `EMAIL_TEST_TO`, no depende de `AUTO_EMAIL_ENABLED`, no reserva ni altera el envío diario y no guarda una fila de envío manual. Un mensaje de éxito significa que SMTP aceptó el mensaje, no que llegó a la bandeja. Ninguna prueba, compilación o inicio del backend ejecuta este comando automáticamente.
+Para enviar explícitamente un informe actual de prueba a todos los destinatarios guardados en Alertas, revisa primero que ese buzón sea controlado y ejecuta `npm run email:report:test` desde `backend`. El comando requiere la configuración SMTP y la lista de destinatarios, verifica SMTP antes de enviar, y no usa `EMAIL_TEST_TO`, no depende de `AUTO_EMAIL_ENABLED`, no reserva ni altera el envío diario y no guarda una fila de envío manual. Un mensaje de éxito significa que SMTP aceptó el mensaje, no que llegó a la bandeja. Ninguna prueba, compilación o inicio del backend ejecuta este comando automáticamente.
 
 ### Persistencia, reintentos y supervisión
 
@@ -165,7 +165,7 @@ La API usa sesiones opacas persistidas en PostgreSQL. El navegador recibe una co
 
 | Rol | Permisos |
 | --- | --- |
-| ADMIN | Leer garantias, dashboard, historial y configuracion de correo; validar e importar nominas; modificar el destinatario global del correo. |
+| ADMIN | Leer garantias, dashboard, historial y configuracion de correo; validar e importar nominas; modificar los destinatarios globales del correo. |
 | PROFESIONAL | Leer garantias, dashboard e historial; validar e importar nominas; leer la configuracion global del correo. |
 | LECTOR | Leer garantias, dashboard, historial, opciones de filtros y configuracion del correo. No puede importar ni modificar la configuracion. |
 
@@ -207,6 +207,6 @@ El bloqueo por intentos reside en memoria: reiniciar el proceso lo reinicia y va
 
 ### Scheduler de informes automáticos
 
-El scheduler permanece deshabilitado salvo que `AUTO_EMAIL_ENABLED=true`; mantenerlo en `false` fuera de QA. Usa el único destinatario válido guardado en la configuración de Alertas de PostgreSQL. Los fallos SMTP de red y las respuestas SMTP 4xx son transitorios: se reintentan con espera de 5 minutos y un máximo de 5 intentos diarios. Los errores permanentes (incluyendo autenticación y respuestas SMTP 5xx) se registran y no se reintentan. Una reserva `EN_PROCESO` se recupera después de 15 minutos, con el mismo límite de intentos.
+El scheduler permanece deshabilitado salvo que `AUTO_EMAIL_ENABLED=true`; mantenerlo en `false` fuera de QA. Usa la lista de destinatarios guardada en Alertas de PostgreSQL. Los fallos SMTP de red y respuestas 4xx son transitorios: se reintentan cada cinco minutos hasta cinco intentos diarios. Los errores permanentes (incluyendo autenticacion y respuestas 5xx) no se reintentan. Una reserva `EN_PROCESO` abandonada se recupera despues de 15 minutos.
 
 SMTP y PostgreSQL no comparten una transacción: si SMTP acepta el mensaje y falla el registro `ENVIADO`, el scheduler conserva la reserva y no reintenta en el proceso actual. Si el proceso cae en esa ventana, una reserva abandonada podrá recuperarse luego de 15 minutos y existe riesgo de duplicado; no se puede asegurar entrega exactamente una vez sin idempotencia ofrecida por el servidor de correo. Las pruebas automatizadas usan reloj, mailer y repositorio simulados; no contactan SMTP ni PostgreSQL.

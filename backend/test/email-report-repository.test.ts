@@ -5,10 +5,12 @@ const prismaMocks = vi.hoisted(() => ({
   findDelivery: vi.fn(),
   updateMany: vi.fn(),
   createAttempt: vi.fn(),
+  findNotificationConfig: vi.fn(),
 }));
 
 vi.mock("../src/db/prisma.js", () => ({
   prisma: {
+    configuracionNotificaciones: { findUnique: prismaMocks.findNotificationConfig },
     envioInformeCorreo: { create: prismaMocks.createDelivery, findUnique: prismaMocks.findDelivery },
     intentoEnvioCorreo: { create: prismaMocks.createAttempt },
     $transaction: (work: (tx: unknown) => unknown) => typeof work === "function"
@@ -17,7 +19,7 @@ vi.mock("../src/db/prisma.js", () => ({
   },
 }));
 
-import { emailReportDeliveryStore } from "../src/modules/notificaciones/email-report-repository.js";
+import { emailReportDeliveryStore, findConfiguredEmailRecipients } from "../src/modules/notificaciones/email-report-repository.js";
 
 const date = "2026-10-13";
 const reserved = { id: "reservation", estado: "EN_PROCESO", iniciadoAt: new Date(), intentos: 1, destinatario: "qa@example.test", codigoError: null };
@@ -30,9 +32,16 @@ beforeEach(() => {
   prismaMocks.findDelivery.mockResolvedValue({ ...reserved });
   prismaMocks.updateMany.mockResolvedValue({ count: 0 });
   prismaMocks.createAttempt.mockResolvedValue({});
+  prismaMocks.findNotificationConfig.mockResolvedValue({ emailDestinatario: "legacy@example.test", emailDestinatarios: [] });
 });
 
 describe("reservas persistidas de informes", () => {
+  it("lee la lista nueva y conserva respaldo al destinatario legado", async () => {
+    prismaMocks.findNotificationConfig.mockResolvedValueOnce({ emailDestinatario: "legacy@example.test", emailDestinatarios: [] });
+    expect(await findConfiguredEmailRecipients()).toEqual(["legacy@example.test"]);
+    prismaMocks.findNotificationConfig.mockResolvedValueOnce({ emailDestinatario: "legacy@example.test", emailDestinatarios: ["First@example.test", "second@example.test"] });
+    expect(await findConfiguredEmailRecipients()).toEqual(["first@example.test", "second@example.test"]);
+  });
   it("no recupera una reserva reciente y la vuelve a considerar tras 15 minutos", async () => {
     expect(await emailReportDeliveryStore.claim(date, reserved.destinatario)).toBe("deferred");
     expect(prismaMocks.updateMany.mock.calls[0][0].where.OR[1].iniciadoAt.lt).toEqual(new Date("2026-10-13T11:45:00Z"));

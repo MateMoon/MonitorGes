@@ -131,13 +131,14 @@ async function persistRowError(importacionId: string, error: ValidationError) {
   });
 }
 
-export async function importWorkbook(buffer: Buffer, filename: string): Promise<ImportFileResult> {
+export async function importWorkbook(buffer: Buffer, filename: string, usuarioId: string): Promise<ImportFileResult> {
   const { validation, registrosValidos } = await parseWorkbookForImport(buffer, filename);
   const validationErrorRows = new Set(validation.errores.map((error) => error.numeroFila));
   const initial = await prisma.$transaction(async (tx) => {
     const importacion = await tx.importacion.create({
       data: {
         nombreArchivo: validation.nombreArchivo,
+        usuarioId,
         estado: EstadoImportacion.FALLIDA,
         registrosLeidos: validation.filasLeidas,
         registrosConError: validationErrorRows.size,

@@ -4,7 +4,8 @@ import { STATUS, STATUS_ORDER, type Status } from '../data'
 import { CONTEOS, GARANTIAS_DATA, RESPONSABLES } from '../data/mockData'
 import type { Nav } from './pages1'
 import { getImportHistory, importFile, validateImportFile, type ImportHistoryItem, type ImportPagination, type ImportResult, type ImportValidationResult } from '../services/importaciones'
-import { getNotificationEmailConfig, saveNotificationEmail } from '../services/notificaciones'
+import { getNotificationEmailConfig, saveNotificationEmails } from '../services/notificaciones'
+import ConfiguracionUsuarios from './ConfiguracionUsuarios'
 import { Btn, Card, CardHeader, StatusBadge, Th, cx, inputCls, tdCls } from '../ui'
 
 type Toast = (m: string) => void
@@ -204,7 +205,7 @@ export function Historial() {
           <tbody className="divide-y divide-line">
             {loading ? <tr><td colSpan={9} className={`${tdCls} py-8 text-center text-muted`}>Cargando historial…</td></tr> : error ? <tr><td colSpan={9} className={`${tdCls} py-8 text-center text-[#a12a22]`}>{error}</td></tr> : rows.length === 0 ? <tr><td colSpan={9} className={`${tdCls} py-8 text-center text-muted`}>Todavía no hay importaciones guardadas.</td></tr> : rows.map((row) => (
               <tr key={row.id} className="hover:bg-canvas">
-                <td className={cx(tdCls, 'tnum')}>{formatDate(row.fechaImportacion)}</td><td className={tdCls}>—</td><td className={cx(tdCls, 'font-mono text-[13px]')}>{row.nombreArchivo}</td>
+                <td className={cx(tdCls, 'tnum')}>{formatDate(row.fechaImportacion)}</td><td className={tdCls} title={row.usuario?.username}>{row.usuario?.nombre ?? 'No registrado'}</td><td className={cx(tdCls, 'font-mono text-[13px]')}>{row.nombreArchivo}</td>
                 <td className={cx(tdCls, 'tnum text-right')}>{row.filasLeidas}</td><td className={cx(tdCls, 'tnum text-right')}>{row.registrosNuevos}</td><td className={cx(tdCls, 'tnum text-right')}>{row.registrosActualizados}</td>
                 <td className={cx(tdCls, 'tnum text-right', row.registrosConError > 0 && 'font-semibold text-[#a12a22]')}>{row.registrosConError}</td>
                 <td className={tdCls}><span className={cx('rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset', badge(row.estado))}>{statusLabel(row.estado)}</span></td>
@@ -222,7 +223,7 @@ export function Historial() {
         <Card className="w-full max-w-lg"><div onClick={(event) => event.stopPropagation()}>
           <CardHeader title="Detalle de importación" sub={open.nombreArchivo} right={<button onClick={() => setOpen(null)}><X className="size-5 text-muted" /></button>} />
           <dl className="grid grid-cols-2 gap-4 p-5 text-sm">
-            {[["Fecha", formatDate(open.fechaImportacion)], ["Usuario", "—"], ["Filas leídas", open.filasLeidas], ["Nuevos", open.registrosNuevos], ["Actualizados", open.registrosActualizados], ["Sin cambios", open.registrosSinCambios], ["Errores", open.registrosConError], ["Estado", statusLabel(open.estado)]].map(([label, value]) => <div key={String(label)}><dt className="text-xs uppercase tracking-wider text-muted">{label}</dt><dd className="mt-0.5 font-medium">{value}</dd></div>)}
+            {[["Fecha", formatDate(open.fechaImportacion)], ["Usuario", open.usuario?.nombre ?? "No registrado"], ["Filas leídas", open.filasLeidas], ["Nuevos", open.registrosNuevos], ["Actualizados", open.registrosActualizados], ["Sin cambios", open.registrosSinCambios], ["Errores", open.registrosConError], ["Estado", statusLabel(open.estado)]].map(([label, value]) => <div key={String(label)}><dt className="text-xs uppercase tracking-wider text-muted">{label}</dt><dd className="mt-0.5 font-medium">{value}</dd></div>)}
           </dl>
           <div className="flex justify-end border-t border-line p-4"><Btn variant="primary" onClick={() => setOpen(null)}>Cerrar</Btn></div>
           </div></Card>
@@ -231,12 +232,9 @@ export function Historial() {
   )
 }
 /* ---------------- ALERTAS ---------------- */
-export function Alertas({ initialTab, toast, canEditEmail }: { initialTab?: string; toast: Toast; canEditEmail: boolean }) {
-  const [tab, setTab] = useState(initialTab === 'monitoreo' ? 'monitoreo' : 'bandeja')
-  const [email, setEmail] = useState('')
-  const [savedEmail, setSavedEmail] = useState<string | null>(null)
-  const [automaticEnabled, setAutomaticEnabled] = useState<boolean | null>(null)
-  const [scheduledTime, setScheduledTime] = useState('08:00')
+export function Alertas({ toast, canEditEmail }: { initialTab?: string; toast: Toast; canEditEmail: boolean }) {
+  const [emails, setEmails] = useState<string[]>([''])
+  const [savedEmails, setSavedEmails] = useState<string[]>([])
   const [emailLoading, setEmailLoading] = useState(true)
   const [emailSaving, setEmailSaving] = useState(false)
   const [emailLoadError, setEmailLoadError] = useState<string | null>(null)
@@ -245,48 +243,50 @@ export function Alertas({ initialTab, toast, canEditEmail }: { initialTab?: stri
   useEffect(() => {
     const controller = new AbortController()
     getNotificationEmailConfig(controller.signal).then((config) => {
-      setEmail(config.email ?? '')
-      setSavedEmail(config.email)
-      setAutomaticEnabled(config.automaticEnabled)
-      setScheduledTime(config.scheduledTime)
+      const configured = config.emails?.length ? config.emails : config.email ? [config.email] : []
+      setEmails(configured.length ? configured : [''])
+      setSavedEmails(configured)
     }).catch((cause) => {
       if (!controller.signal.aborted) {
-        setEmailLoadError(cause instanceof Error ? cause.message : 'No fue posible cargar la configuración del correo.')
-        setAutomaticEnabled(null)
+        setEmailLoadError(cause instanceof Error ? cause.message : 'No fue posible cargar la configuracion del correo.')
       }
     }).finally(() => { if (!controller.signal.aborted) setEmailLoading(false) })
     return () => controller.abort()
   }, [])
 
   const saveEmail = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault(); setEmailSaveError(null); setEmailSavedMessage(null); setEmailSaving(true)
+    event.preventDefault(); setEmailSaveError(null); setEmailSavedMessage(null)
+    const trimmed = emails.map((email) => email.trim())
+    if (trimmed.some((email) => !email)) {
+      setEmailSaveError('Agrega al menos un correo y elimina las filas vacias.')
+      return
+    }
+    if (trimmed.some((email) => email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) {
+      setEmailSaveError('Revisa las direcciones: cada correo debe tener un formato valido.')
+      return
+    }
+    const uniqueEmails = [...new Set(trimmed.map((email) => email.toLowerCase()))]
+    setEmailSaving(true)
     try {
-      const saved = await saveNotificationEmail(email.trim())
-      setEmail(saved.email); setSavedEmail(saved.email); setEmailSavedMessage('La dirección destinataria se guardó correctamente.')
-      toast('Destinatario de informes actualizado.')
-    } catch (cause) { setEmailSaveError(cause instanceof Error ? cause.message : 'No fue posible guardar la dirección. Intenta nuevamente.') }
+      const saved = await saveNotificationEmails(uniqueEmails)
+      setEmails(saved.emails); setSavedEmails(saved.emails); setEmailSavedMessage('La lista de destinatarios se guardo correctamente.')
+      toast('Destinatarios de informes actualizados.')
+    } catch (cause) { setEmailSaveError(cause instanceof Error ? cause.message : 'No fue posible guardar los destinatarios. Intenta nuevamente.') }
     finally { setEmailSaving(false) }
   }
-  const tabs = [['bandeja', 'Bandeja de notificaciones'], ['monitoreo', 'Monitoreo automático']]
   return <div className="page-in space-y-5">
     <div><h2 className="text-2xl font-semibold">Sistema de alertas</h2></div>
-    <Card className="grid grid-cols-1 divide-y divide-line md:grid-cols-3 md:divide-x md:divide-y-0">
-      <div className="flex items-center gap-3 p-5"><span className={cx('size-3 rounded-full', automaticEnabled === true ? 'bg-[#3c9a67]' : 'bg-[#98a2b3]')} /><div><p className="font-semibold text-muted">{emailLoading ? 'Consultando configuración' : automaticEnabled === null ? 'Estado no verificado' : `Configurado como ${automaticEnabled ? 'habilitado' : 'deshabilitado'}`}</p><p className="text-xs text-muted">{emailLoading ? 'Leyendo configuración del backend' : 'El estado de ejecución del programador no está disponible'}</p></div></div>
-      <div className="p-5"><p className="text-xs uppercase tracking-wider text-muted">Destinatario del informe</p><p className="mt-1 truncate text-sm font-semibold">{emailLoading ? 'Cargando...' : savedEmail ?? 'Sin configurar'}</p></div>
-      <div className="p-5"><p className="text-xs uppercase tracking-wider text-muted">Ejecución</p><p className="mt-1 text-sm font-semibold">No verificada</p></div>
+    <Card><CardHeader title="Configuracion de notificaciones por correo" sub="Destinatarios persistidos en PostgreSQL para el informe automatico diario" />
+      <form noValidate onSubmit={saveEmail} className="space-y-4 p-5"><fieldset disabled={!canEditEmail || emailLoading || emailSaving} className="space-y-3"><legend className="mb-2 text-sm font-medium">Correos destinatarios</legend>
+        {emails.map((email, index) => <div key={index} className="flex max-w-2xl items-center gap-2"><input aria-label={`Correo destinatario ${index + 1}`} type="email" maxLength={254} autoComplete="email" value={email} onChange={(event) => { setEmails((current) => current.map((value, itemIndex) => itemIndex === index ? event.target.value : value)); setEmailSaveError(null); setEmailSavedMessage(null) }} placeholder="equipo@institucion.cl" className={cx(inputCls, 'flex-1')} /><Btn aria-label={`Quitar correo ${index + 1}`} onClick={() => { setEmails((current) => current.filter((_, itemIndex) => itemIndex !== index)); setEmailSaveError(null) }} className="!px-3">Quitar</Btn></div>)}
+        <Btn onClick={() => setEmails((current) => [...current, ''])}>Agregar correo</Btn>
+      </fieldset><p className="text-xs text-muted">Los duplicados se eliminan sin distinguir mayusculas y minusculas. Puedes quitar todos los correos para pausar los envios. El informe no incluye nombre, RUT ni diagnostico de pacientes.</p>
+      {emailLoadError && <p role="alert" className="rounded-lg bg-[#fbe7e5] px-4 py-3 text-sm text-[#a12a22]">No fue posible cargar la configuracion: {emailLoadError}</p>}{emailLoading && <p role="status" className="flex items-center gap-2 text-sm text-muted"><Loader2 className="size-4 animate-spin" />Cargando destinatarios guardados...</p>}{!emailLoading && !emailLoadError && savedEmails.length === 0 && <p className="rounded-lg bg-[#fff8e8] px-4 py-3 text-sm text-[#75550a]">Aun no hay direcciones guardadas. El programador no enviara informes hasta que configures al menos una.</p>}
+      {!canEditEmail && <p className="text-xs text-muted">Solo administradores pueden modificar los destinatarios.</p>}{emailSaveError && <p role="alert" className="rounded-lg bg-[#fbe7e5] px-4 py-3 text-sm text-[#a12a22]">{emailSaveError}</p>}{emailSavedMessage && <p role="status" className="rounded-lg bg-[#e6f4ec] px-4 py-3 text-sm text-[#256b45]">{emailSavedMessage}</p>}<div className="flex justify-end"><Btn variant="primary" type="submit" disabled={!canEditEmail || emailLoading || emailSaving || Boolean(emailLoadError)}>{emailSaving ? 'Guardando...' : 'Guardar configuracion'}</Btn></div></form>
     </Card>
-    <Card><CardHeader title="Configuración de notificaciones por correo" sub="Destinatario persistido en PostgreSQL para el informe automático diario" />
-      <form onSubmit={saveEmail} className="space-y-4 p-5"><div><label htmlFor="notification-email" className="mb-1.5 block text-sm font-medium">Correo destinatario</label><input id="notification-email" name="email" type="email" required maxLength={254} autoComplete="email" value={email} onChange={(event) => { setEmail(event.target.value); setEmailSaveError(null); setEmailSavedMessage(null) }} disabled={!canEditEmail || emailLoading || emailSaving} placeholder="equipo@institucion.cl" className={cx(inputCls, 'max-w-xl')} /><p className="mt-1.5 text-xs text-muted">El informe contiene garantías y fechas límite; no incluye nombre, RUT ni diagnóstico de pacientes.</p></div>
-      {emailLoadError && <p role="alert" className="rounded-lg bg-[#fbe7e5] px-4 py-3 text-sm text-[#a12a22]">No fue posible cargar la configuración: {emailLoadError}</p>}{emailLoading && <p role="status" className="flex items-center gap-2 text-sm text-muted"><Loader2 className="size-4 animate-spin" />Cargando destinatario guardado...</p>}{!emailLoading && !emailLoadError && !savedEmail && <p className="rounded-lg bg-[#fff8e8] px-4 py-3 text-sm text-[#75550a]">Aún no hay una dirección guardada. El programador no enviará informes hasta que configures una dirección válida.</p>}{!emailLoading && !emailLoadError && savedEmail && <p className="text-xs text-muted">Dirección actualmente guardada: <span className="font-medium text-ink">{savedEmail}</span></p>}
-      <p className={cx('rounded-lg px-4 py-3 text-sm', automaticEnabled === true ? 'bg-[#e6f4ec] text-[#256b45]' : 'bg-canvas text-muted')}>Configuración del programador: {automaticEnabled === null ? 'no verificada' : automaticEnabled ? `habilitado para las ${scheduledTime} (America/Santiago)` : 'deshabilitado'}. El estado de ejecución no está expuesto por la API.</p>{!canEditEmail && <p className="text-xs text-muted">Solo administradores pueden modificar el destinatario.</p>}{emailSaveError && <p role="alert" className="rounded-lg bg-[#fbe7e5] px-4 py-3 text-sm text-[#a12a22]">{emailSaveError}</p>}{emailSavedMessage && <p role="status" className="rounded-lg bg-[#e6f4ec] px-4 py-3 text-sm text-[#256b45]">{emailSavedMessage}</p>}<div className="flex justify-end"><Btn variant="primary" type="submit" disabled={!canEditEmail || emailLoading || emailSaving || Boolean(emailLoadError)}>{emailSaving ? 'Guardando...' : 'Guardar configuración'}</Btn></div></form>
-    </Card>
-    <div className="flex gap-1 border-b border-line">{tabs.map(([key, label]) => <button key={key} onClick={() => setTab(key)} className={cx('-mb-px border-b-2 px-4 py-2.5 text-sm font-medium transition', tab === key ? 'border-brand text-brand' : 'border-transparent text-muted hover:text-ink')}>{label}</button>)}</div>
-    {tab === 'bandeja' && <Card className="p-8 text-center"><CardHeader title="Bandeja de notificaciones" sub="No hay una API de bandeja o historial de correos disponible." /><p className="text-sm text-muted">No se pueden consultar envíos ni alertas desde esta pantalla.</p></Card>}
-    {tab === 'monitoreo' && <Card className="p-5"><CardHeader title="Monitoreo automático" right={<span className="rounded-full bg-canvas px-3 py-1 text-sm text-muted">Ejecución no verificada</span>} /><p className="text-sm text-muted">{automaticEnabled === null ? 'No fue posible consultar la configuración del backend.' : `Configurado como ${automaticEnabled ? 'habilitado' : 'deshabilitado'} para las ${scheduledTime} (America/Santiago).`}</p><p className="mt-2 text-sm text-muted">La API informa la configuración, pero no expone el estado de ejecución del programador ni su historial.</p></Card>}
+    <p className="rounded-lg bg-canvas px-4 py-3 text-sm text-muted">La bandeja de notificaciones y el monitoreo automatico estan temporalmente deshabilitados.</p>
   </div>
-}
-
-/* ---------------- ESTADÍSTICAS ---------------- */
+}/* ---------------- ESTADÍSTICAS ---------------- */
 function Donut() {
   const total = STATUS_ORDER.reduce((a, s) => a + CONTEOS[s], 0)
   let acc = 0
@@ -363,4 +363,4 @@ export function Estadisticas() {
 }
 
 /* ---------------- CONFIGURACIÓN ---------------- */
-export function Configuracion() { return <div className="page-in space-y-5"><div><h2 className="text-2xl font-semibold">Configuración</h2></div><Card className="p-6"><CardHeader title="Administración no disponible" /><p className="text-sm text-muted">Esta aplicación no cuenta con una API para consultar o modificar rangos de garantías ni administrar usuarios. No se muestran datos de demostración como información operativa.</p></Card></div> }
+export function Configuracion({ isAdmin, toast }: { isAdmin: boolean; toast: Toast }) { return <ConfiguracionUsuarios isAdmin={isAdmin} toast={toast} /> }

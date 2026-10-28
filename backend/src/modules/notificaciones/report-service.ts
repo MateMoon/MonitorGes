@@ -5,6 +5,7 @@ import { emailRecipientListSchema } from "./email-config-schema.js";
 export interface ReportGuarantee {
   id: string;
   nombreGarantia: string;
+  rut: string;
   fechaLimite: string;
   responsable: string;
 }
@@ -61,10 +62,10 @@ export function formatGuaranteeReport(rows: ReportRow[], fechaInforme: string): 
   ];
   for (const row of rows) {
     const daysLabel = row.diasRestantes < 0 ? `${Math.abs(row.diasRestantes)} día(s) vencida` : `${row.diasRestantes} día(s) restantes`;
-    lines.push(`[${row.estado.toUpperCase()}] ${row.nombreGarantia} | Límite: ${row.fechaLimite} | ${daysLabel} | Responsable: ${row.responsable}`);
+    lines.push(`[${row.estado.toUpperCase()}] RUT: ${row.rut} | Garantía: ${row.nombreGarantia} | Límite: ${row.fechaLimite} | ${daysLabel} | Responsable: ${row.responsable}`);
   }
   if (rows.length === 0) lines.push("No hay garantías vencidas ni próximas a vencer en los rangos configurados.");
-  lines.push("", "Este informe se genera con la fecha civil de America/Santiago. No incluye RUT, nombre ni diagnóstico de pacientes.");
+  lines.push("", "Este informe se genera con la fecha civil de America/Santiago. Incluye el RUT del paciente; no incluye su nombre ni diagnóstico.");
   return lines.join("\n");
 }
 
@@ -81,10 +82,10 @@ export function formatGuaranteeReportHtml(rows: ReportRow[], fechaInforme: strin
       const daysLabel = row.diasRestantes < 0
         ? `${Math.abs(row.diasRestantes)} día(s) vencida`
         : `${row.diasRestantes} día(s) restantes`;
-      return `<tr><td style="padding:12px 8px;border-bottom:1px solid #e5e7eb;border-left:4px solid ${colors.accent}"><span style="display:inline-block;padding:4px 8px;border-radius:999px;background:${colors.background};color:${colors.foreground};font-size:12px;font-weight:700">${escapeHtml(row.estado.toUpperCase())}</span></td><td style="padding:12px;border-bottom:1px solid #e5e7eb">${escapeHtml(row.nombreGarantia)}</td><td style="padding:12px;border-bottom:1px solid #e5e7eb;white-space:nowrap">${escapeHtml(row.fechaLimite)}</td><td style="padding:12px;border-bottom:1px solid #e5e7eb">${escapeHtml(daysLabel)}</td><td style="padding:12px;border-bottom:1px solid #e5e7eb">${escapeHtml(row.responsable)}</td></tr>`;
+      return `<tr><td style="padding:12px 8px;border-bottom:1px solid #e5e7eb;border-left:4px solid ${colors.accent}"><span style="display:inline-block;padding:4px 8px;border-radius:999px;background:${colors.background};color:${colors.foreground};font-size:12px;font-weight:700">${escapeHtml(row.estado.toUpperCase())}</span></td><td style="padding:12px;border-bottom:1px solid #e5e7eb;white-space:nowrap">${escapeHtml(row.rut)}</td><td style="padding:12px;border-bottom:1px solid #e5e7eb">${escapeHtml(row.nombreGarantia)}</td><td style="padding:12px;border-bottom:1px solid #e5e7eb;white-space:nowrap">${escapeHtml(row.fechaLimite)}</td><td style="padding:12px;border-bottom:1px solid #e5e7eb">${escapeHtml(daysLabel)}</td><td style="padding:12px;border-bottom:1px solid #e5e7eb">${escapeHtml(row.responsable)}</td></tr>`;
     }).join("")
-    : `<tr><td colspan="5" style="padding:16px;color:#475569">No hay garantías vencidas ni próximas a vencer en los rangos configurados.</td></tr>`;
-  return `<!doctype html><html><body style="margin:0;padding:24px;background:#f1f5f9;font-family:Arial,Helvetica,sans-serif;color:#0f172a"><main style="max-width:900px;margin:0 auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden"><header style="padding:24px;background:#0f3b5d;color:#ffffff"><p style="margin:0 0 8px;font-size:12px;letter-spacing:1px;text-transform:uppercase">Monitor de Garantías GES</p><h1 style="margin:0;font-size:22px">Informe diario de garantías GES</h1><p style="margin:8px 0 0;color:#dbeafe">${escapeHtml(fechaInforme)}</p></header><section style="padding:20px 24px"><p style="margin:0 0 16px;font-size:16px;font-weight:600">Garantías vencidas o dentro de los próximos 30 días: ${rows.length}</p><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;text-align:left;font-size:14px"><thead><tr style="background:#f8fafc"><th style="padding:12px;border-bottom:2px solid #cbd5e1">Estado</th><th style="padding:12px;border-bottom:2px solid #cbd5e1">Garantía</th><th style="padding:12px;border-bottom:2px solid #cbd5e1">Fecha límite</th><th style="padding:12px;border-bottom:2px solid #cbd5e1">Plazo</th><th style="padding:12px;border-bottom:2px solid #cbd5e1">Responsable</th></tr></thead><tbody>${rowMarkup}</tbody></table></div><p style="margin:20px 0 0;color:#64748b;font-size:12px">Este informe usa la fecha civil de America/Santiago. No incluye RUT, nombre ni diagnóstico de pacientes.</p></section></main></body></html>`;
+    : `<tr><td colspan="6" style="padding:16px;color:#475569">No hay garantías vencidas ni próximas a vencer en los rangos configurados.</td></tr>`;
+  return `<!doctype html><html><body style="margin:0;padding:24px;background:#f1f5f9;font-family:Arial,Helvetica,sans-serif;color:#0f172a"><main style="max-width:900px;margin:0 auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden"><header style="padding:24px;background:#0f3b5d;color:#ffffff"><p style="margin:0 0 8px;font-size:12px;letter-spacing:1px;text-transform:uppercase">Monitor de Garantías GES</p><h1 style="margin:0;font-size:22px">Informe diario de garantías GES</h1><p style="margin:8px 0 0;color:#dbeafe">${escapeHtml(fechaInforme)}</p></header><section style="padding:20px 24px"><p style="margin:0 0 16px;font-size:16px;font-weight:600">Garantías vencidas o dentro de los próximos 30 días: ${rows.length}</p><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;text-align:left;font-size:14px"><thead><tr style="background:#f8fafc"><th style="padding:12px;border-bottom:2px solid #cbd5e1">Estado</th><th style="padding:12px;border-bottom:2px solid #cbd5e1">RUT</th><th style="padding:12px;border-bottom:2px solid #cbd5e1">Tipo de garantía</th><th style="padding:12px;border-bottom:2px solid #cbd5e1">Fecha límite</th><th style="padding:12px;border-bottom:2px solid #cbd5e1">Plazo</th><th style="padding:12px;border-bottom:2px solid #cbd5e1">Responsable</th></tr></thead><tbody>${rowMarkup}</tbody></table></div><p style="margin:20px 0 0;color:#64748b;font-size:12px">Este informe usa la fecha civil de America/Santiago. Incluye el RUT del paciente; no incluye su nombre ni diagnóstico de pacientes.</p></section></main></body></html>`;
 }
 
 function reportMessage(rows: ReportRow[], fechaInforme: string, subject: string, automatic: boolean) {

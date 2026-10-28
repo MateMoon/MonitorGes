@@ -3,7 +3,7 @@ import { startEmailReportScheduler } from "../src/modules/notificaciones/email-r
 import type { ReportDeliveryStore } from "../src/modules/notificaciones/report-service.js";
 
 const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
-const row = { id: "qa-row", nombreGarantia: "Garantía QA", fechaLimite: "2026-10-14", responsable: "Equipo QA" };
+const row = { id: "qa-row", nombreGarantia: "Garantía QA", rut: "12345678-5", fechaLimite: "2026-10-14", responsable: "Equipo QA" };
 
 function storeFake(initial: Array<[string, "processing" | "failed" | "sent"]> = []): ReportDeliveryStore {
   const statuses = new Map<string, "processing" | "failed" | "sent">(initial);

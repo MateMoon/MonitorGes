@@ -7,6 +7,7 @@ const today = "2026-10-13";
 const sample = (id: string, days: number, nombreGarantia = `Garantía ${id}`) => ({
   id,
   nombreGarantia,
+  rut: "12345678-5",
   fechaLimite: new Date(Date.parse(`${today}T00:00:00.000Z`) + days * 86_400_000).toISOString().slice(0, 10),
   responsable: "Centro ficticio",
 });

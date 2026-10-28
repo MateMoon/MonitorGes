@@ -95,7 +95,7 @@ export default function App() {
           {/* Estadísticas sigue temporalmente deshabilitada.
           {page === 'estadisticas' && <Estadisticas />}
           */}
-          {page === 'configuracion' && <Configuracion />}
+          {page === 'configuracion' && <Configuracion isAdmin={user.rol === 'ADMIN'} toast={toast} />}
         </main>
       </div>
 

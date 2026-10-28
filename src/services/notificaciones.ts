@@ -1,14 +1,16 @@
 import { apiRequest } from './api'
 
 export interface NotificationEmailConfig {
+  emails: string[]
   email: string | null
   updatedAt: string | null
   automaticEnabled: boolean
   scheduledTime: string
 }
 
-export interface SavedNotificationEmail {
-  email: string
+export interface SavedNotificationEmails {
+  emails: string[]
+  email: string | null
   updatedAt: string
 }
 
@@ -17,11 +19,11 @@ export async function getNotificationEmailConfig(signal?: AbortSignal): Promise<
   return result.data
 }
 
-export async function saveNotificationEmail(email: string): Promise<SavedNotificationEmail> {
-  const result = await apiRequest<{ data: SavedNotificationEmail }>('/api/notificaciones/configuracion-correo', {
+export async function saveNotificationEmails(emails: string[]): Promise<SavedNotificationEmails> {
+  const result = await apiRequest<{ data: SavedNotificationEmails }>('/api/notificaciones/configuracion-correo', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email }),
+    body: JSON.stringify({ emails }),
   })
   return result.data
 }

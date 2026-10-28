@@ -41,7 +41,9 @@ export interface ImportResult {
   errores: ImportValidationError[];
 }
 
-export interface ImportHistoryItem extends Omit<ImportResult, 'errores'> {}
+export interface ImportHistoryItem extends Omit<ImportResult, 'errores'> {
+  usuario: { nombre: string; username: string } | null;
+}
 export interface ImportPagination { page: number; limit: number; total: number; totalPages: number }
 
 export async function validateImportFile(file: File, signal?: AbortSignal): Promise<ImportValidationResult> {

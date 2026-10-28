@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AlertCircle, ArrowLeft, CheckCircle2, ChevronLeft, ChevronRight, Eye, Loader2, Search, X } from 'lucide-react';
 import { STATUS, type Status, fmt, rutFull } from '../data';
 import { getGarantias, getGarantiaById, getGarantiaFilterOptions } from '../services/garantias';
@@ -21,8 +21,6 @@ export function Garantias({ nav, initial, gestionadas }: { nav: Nav; initial?: S
   const [resp, setResp] = useState('');
   const [prob, setProb] = useState('');
   const [nombreGarantia, setNombreGarantia] = useState('');
-  const [fechaDesde, setFechaDesde] = useState('');
-  const [fechaHasta, setFechaHasta] = useState('');
   const [page, setPage] = useState(1);
   const [asc, setAsc] = useState(true);
   const [reload, setReload] = useState(0);
@@ -36,7 +34,7 @@ export function Garantias({ nav, initial, gestionadas }: { nav: Nav; initial?: S
     return () => controller.abort();
   }, []);
 
-  useEffect(() => setPage(1), [q, estadosKey, resp, prob, nombreGarantia, fechaDesde, fechaHasta]);
+  useEffect(() => setPage(1), [q, estadosKey, resp, prob, nombreGarantia]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -50,8 +48,6 @@ export function Garantias({ nav, initial, gestionadas }: { nav: Nav; initial?: S
       responsable: resp.trim() || undefined,
       problemaSalud: prob.trim() || undefined,
       nombreGarantia: nombreGarantia.trim() || undefined,
-      fechaLimiteDesde: fechaDesde || undefined,
-      fechaLimiteHasta: fechaHasta || undefined,
       page,
       limit: PAGE_SIZE,
       sort: 'fechaLimite',
@@ -67,10 +63,10 @@ export function Garantias({ nav, initial, gestionadas }: { nav: Nav; initial?: S
       })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [q, estadosKey, resp, prob, nombreGarantia, fechaDesde, fechaHasta, page, asc, reload]);
+  }, [q, estadosKey, resp, prob, nombreGarantia, page, asc, reload]);
 
   const clean = () => {
-    setQ(''); setResp(''); setProb(''); setNombreGarantia(''); setFechaDesde(''); setFechaHasta('');
+    setQ(''); setResp(''); setProb(''); setNombreGarantia('');
     setEstados(new Set(DEFAULT_STATES));
   };
   const toggle = (status: Status) => setEstados((previous) => {
@@ -79,7 +75,7 @@ export function Garantias({ nav, initial, gestionadas }: { nav: Nav; initial?: S
     return next;
   });
   const estadoSel = estados.size === 1 ? [...estados][0] : estados.size === CHIP_ORDER.length ? 'todos' : 'varios';
-  const dirty = Boolean(q || resp || prob || nombreGarantia || fechaDesde || fechaHasta) || estadosKey !== [...DEFAULT_STATES].sort().join(',');
+  const dirty = Boolean(q || resp || prob || nombreGarantia) || estadosKey !== [...DEFAULT_STATES].sort().join(',');
 
   return (
     <div className="page-in space-y-4">
@@ -88,7 +84,7 @@ export function Garantias({ nav, initial, gestionadas }: { nav: Nav; initial?: S
         <p className="mt-1 text-sm text-muted">Listado actualizado desde el sistema.</p>
       </div>
       <Card className="p-4">
-        <div className="grid grid-cols-2 gap-3 xl:grid-cols-[1.5fr_1fr_1fr_1fr_1fr_1fr_auto]">
+        <div className="grid grid-cols-2 gap-3 xl:grid-cols-[1.5fr_1fr_1fr_1fr_1fr_auto]">
           <div className="relative col-span-2 xl:col-span-1">
             <Search className="absolute left-3 top-2.5 size-4 text-muted" />
             <input className={cx(inputCls, 'pl-9')} placeholder="Buscar por RUT o nombre…" value={q} onChange={(event) => setQ(event.target.value)} />
@@ -108,10 +104,6 @@ export function Garantias({ nav, initial, gestionadas }: { nav: Nav; initial?: S
           <select className={inputCls} aria-label="Filtrar por nombre de garantía" value={nombreGarantia} onChange={(event) => setNombreGarantia(event.target.value)}>
             <option value="">Garantía: todas</option>{filterOptions.nombresGarantia.map((option) => <option key={option} value={option}>{option}</option>)}
           </select>
-          <div className="flex gap-2">
-            <input className={cx(inputCls, 'min-w-0')} type="date" aria-label="Fecha límite desde" title="Fecha límite desde" value={fechaDesde} onChange={(event) => setFechaDesde(event.target.value)} />
-            <input className={cx(inputCls, 'min-w-0')} type="date" aria-label="Fecha límite hasta" title="Fecha límite hasta" value={fechaHasta} onChange={(event) => setFechaHasta(event.target.value)} />
-          </div>
           <Btn onClick={clean} disabled={!dirty}><X className="size-4" />Limpiar</Btn>
         </div>
         <div className="mt-3.5 flex flex-wrap items-center gap-2 border-t border-line pt-3.5">
@@ -190,11 +182,10 @@ export function Detalle({ id, nav, gestionadas, onGestionar }: { id: string | nu
         <div className="text-center"><p className="text-xs font-semibold uppercase tracking-wider text-muted">{guarantee.dias < 0 ? 'Vencida' : 'Plazo restante'}</p><p className="text-3xl font-semibold">{guarantee.dias < 0 ? `Hace ${-guarantee.dias} días` : guarantee.dias === 0 ? 'Vence hoy' : `Faltan ${guarantee.dias} ${guarantee.dias === 1 ? 'día' : 'días'}`}</p></div>
         <div className="text-right"><p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted">Estado</p><span className={cx('inline-block rounded-lg px-4 py-1.5 text-lg font-semibold uppercase tracking-wide ring-1 ring-inset', STATUS[guarantee.estado].badge)}>{STATUS[guarantee.estado].label}</span></div>
       </div>
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1fr_1fr]">
+      <div className="grid grid-cols-1 gap-5">
         <div className="space-y-5"><Card><CardHeader title="Información del paciente" /><dl className="grid grid-cols-3 gap-5 p-5"><Field label="Nombre">{guarantee.nombre}</Field><Field label="RUT"><span className="font-mono">{guarantee.rut}</span></Field><Field label="DV">{guarantee.dv}</Field></dl></Card>
           <Card><CardHeader title="Información de la garantía" /><dl className="grid grid-cols-2 gap-5 p-5"><Field label="Problema de salud">{guarantee.problema}</Field><Field label="Nombre de la garantía">{guarantee.garantia}</Field><Field label="Fecha de inicio"><span className="tnum">{fmt(guarantee.inicio)}</span></Field><Field label="Fecha límite"><span className="tnum">{fmt(guarantee.limite)}</span></Field><Field label="Días restantes"><Days d={guarantee.dias} /></Field><Field label="Estado"><StatusBadge s={guarantee.estado} /></Field><Field label="Responsable">{guarantee.responsable}</Field><Field label="Gestión">{done ? <span className="text-[#256b45]">Marcada como gestionada</span> : <span className="text-muted">Sin gestionar</span>}</Field></dl></Card>
         </div>
-        <Card><CardHeader title="Historial de notificaciones" sub="El historial real estará disponible en una etapa posterior." /><p className="p-5 text-sm text-muted">Esta garantía aún no tiene eventos de notificación disponibles desde la API.</p></Card>
       </div>
     </div>
   );

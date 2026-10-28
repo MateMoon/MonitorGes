@@ -8,9 +8,9 @@ export async function findReportGuarantees(fechaInforme: string): Promise<Report
   limit.setUTCDate(limit.getUTCDate() + 30);
   const rows = await prisma.garantia.findMany({
     where: { fechaLimite: { lte: limit } },
-    select: { id: true, nombreGarantia: true, fechaLimite: true, responsable: true },
+    select: { id: true, nombreGarantia: true, fechaLimite: true, responsable: true, paciente: { select: { rutNumero: true, dv: true } } },
   });
-  return rows.map((row) => ({ ...row, fechaLimite: row.fechaLimite.toISOString().slice(0, 10) }));
+  return rows.map(({ paciente, ...row }) => ({ ...row, rut: `${paciente.rutNumero}-${paciente.dv}`, fechaLimite: row.fechaLimite.toISOString().slice(0, 10) }));
 }
 
 export async function findConfiguredEmailRecipients(): Promise<string[]> {

@@ -30,8 +30,8 @@ export function CardHeader({ title, sub, right }: { title: string; sub?: string;
   )
 }
 
-type BtnProps = { children: ReactNode; onClick?: () => void; variant?: 'primary' | 'secondary' | 'ghost' | 'danger'; disabled?: boolean; className?: string; type?: 'button' | 'submit' }
-export function Btn({ children, onClick, variant = 'secondary', disabled, className, type = 'button' }: BtnProps) {
+type BtnProps = { children: ReactNode; onClick?: () => void; variant?: 'primary' | 'secondary' | 'ghost' | 'danger'; disabled?: boolean; className?: string; type?: 'button' | 'submit'; 'aria-label'?: string }
+export function Btn({ children, onClick, variant = 'secondary', disabled, className, type = 'button', 'aria-label': ariaLabel }: BtnProps) {
   const v = {
     primary: 'bg-brand text-white hover:bg-brand-dark border-brand',
     secondary: 'bg-white text-ink hover:bg-canvas border-line',
@@ -39,7 +39,7 @@ export function Btn({ children, onClick, variant = 'secondary', disabled, classN
     danger: 'bg-white text-[#a12a22] hover:bg-[#fbe7e5] border-[#f1b9b4]',
   }[variant]
   return (
-    <button type={type} onClick={onClick} disabled={disabled}
+    <button type={type} onClick={onClick} disabled={disabled} aria-label={ariaLabel}
       className={cx('inline-flex items-center justify-center gap-2 rounded-lg border px-3.5 py-2 text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40', v, className)}>
       {children}
     </button>

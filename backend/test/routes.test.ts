@@ -2,6 +2,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ list: vi.fn(), find: vi.fn(), filterOptions: vi.fn(), manage: vi.fn(), dashboard: vi.fn(), latestImport: vi.fn(), getSessionUser: vi.fn() }));
 vi.mock("../src/modules/garantias/repository.js", () => ({ listGuarantees: mocks.list, findGuarantee: mocks.find, listGuaranteeFilterOptions: mocks.filterOptions, recordGuaranteeManagement: mocks.manage }));
 vi.mock("../src/modules/dashboard/repository.js", () => ({ dashboardData: mocks.dashboard, latestImport: mocks.latestImport }));
+vi.mock("../src/modules/garantias/management-repository.js", () => ({ writeManagement: mocks.manage }));
 vi.mock("../src/modules/auth/auth-service.js", () => ({ getSessionUser: mocks.getSessionUser }));
 import { buildApp } from "../src/app.js";
 
@@ -12,6 +13,7 @@ describe("API de lectura", () => {
       if (token === "lector") return { id: "user-reader", username: "reader", nombre: "Lector Ficticio", email: "reader@example.test", rol: "LECTOR" };
       if (token === "professional") return { id: "user-professional", username: "professional", nombre: "Profesional Ficticio", email: "professional@example.test", rol: "PROFESIONAL" };
       if (token === "admin") return { id: "user-admin", username: "admin", nombre: "Admin Ficticio", email: "admin@example.test", rol: "ADMIN" };
+      if (token === "coordinator") return { id: "user-coordinator", username: "coordinator", nombre: "Coordinador de prueba", email: "coordinator@example.test", rol: "COORDINADOR_SOME" };
       return null;
     });
     mocks.list.mockResolvedValue({ rows: [], total: 0 });
@@ -75,13 +77,17 @@ describe("API de lectura", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json().data).toMatchObject({ gestionadaAt: gestionadaAt.toISOString(), gestionadaPor: { id: "user-professional", nombre: "Profesional Ficticio" } });
   });
-  it("registra la gestión con el usuario de sesión e ignora cualquier identidad enviada por el cliente", async () => {
+  it("registra una actuación con el usuario de sesión y rechaza identidades o fechas enviadas por el cliente", async () => {
     const id = "00000000-0000-4000-8000-000000000001";
     const gestionadaAt = new Date("2026-10-28T14:15:00.000Z");
-    mocks.manage.mockResolvedValue(gestionadaAt);
-    const response = await app.inject({ method: "POST", url: `/api/garantias/${id}/gestion`, headers: { cookie: "ges_session=professional", origin: "http://localhost:8443", "content-type": "application/json" }, payload: { usuarioId: "attacker-id", gestionadaAt: "2000-01-01T00:00:00.000Z" } });
+    mocks.manage.mockResolvedValue({ gestionadaAt, gestionadaPor: { nombre: "Profesional Ficticio" }, estadoGestion: "EN_GESTION", revisionGestion: 1, evento: { tipo: "ACTUACION" } });
+    const headers = { cookie: "ges_session=professional", origin: "http://localhost:8443" };
+    const invalid = await app.inject({ method: "POST", url: `/api/garantias/${id}/gestion`, headers, payload: { tipoActuacion: "CONTACTO_PACIENTE", revisionGestion: 0, usuarioId: "attacker-id", gestionadaAt: "2000-01-01T00:00:00.000Z" } });
+    expect(invalid.statusCode).toBe(400);
+    expect(mocks.manage).not.toHaveBeenCalled();
+    const response = await app.inject({ method: "POST", url: `/api/garantias/${id}/gestion`, headers, payload: { tipoActuacion: "CONTACTO_PACIENTE", revisionGestion: 0 } });
     expect(response.statusCode).toBe(200);
-    expect(mocks.manage).toHaveBeenCalledWith(id, "user-professional");
+    expect(mocks.manage).toHaveBeenCalledWith(id, expect.objectContaining({ id: "user-professional", rol: "PROFESIONAL" }), { operacion: "actuacion", tipoActuacion: "CONTACTO_PACIENTE", revisionGestion: 0 });
     expect(response.json().data).toMatchObject({ gestionadaAt: gestionadaAt.toISOString(), gestionadaPor: { nombre: "Profesional Ficticio" } });
   });
   it("deniega la gestión a LECTOR y a sesiones anónimas", async () => {
@@ -94,14 +100,14 @@ describe("API de lectura", () => {
   });
   it("rechaza UUID inválido y garantía inexistente sin confirmar la acción", async () => {
     const invalid = await app.inject({ method: "POST", url: "/api/garantias/not-a-uuid/gestion", headers: { cookie: "ges_session=professional", origin: "http://localhost:8443" } });
-    const missing = await app.inject({ method: "POST", url: "/api/garantias/00000000-0000-4000-8000-000000000099/gestion", headers: { cookie: "ges_session=professional", origin: "http://localhost:8443" } });
+    const missing = await app.inject({ method: "POST", url: "/api/garantias/00000000-0000-4000-8000-000000000099/gestion", headers: { cookie: "ges_session=professional", origin: "http://localhost:8443" }, payload: { tipoActuacion: "OTRA_GESTION", revisionGestion: 0 } });
     expect(invalid.statusCode).toBe(400);
     expect(missing.statusCode).toBe(404);
     expect(mocks.manage).toHaveBeenCalledTimes(1);
   });
   it("devuelve un error controlado cuando falla el registro", async () => {
     mocks.manage.mockRejectedValueOnce(new Error("internal fake detail"));
-    const response = await app.inject({ method: "POST", url: "/api/garantias/00000000-0000-4000-8000-000000000001/gestion", headers: { cookie: "ges_session=professional", origin: "http://localhost:8443" } });
+    const response = await app.inject({ method: "POST", url: "/api/garantias/00000000-0000-4000-8000-000000000001/gestion", headers: { cookie: "ges_session=professional", origin: "http://localhost:8443" }, payload: { tipoActuacion: "OTRA_GESTION", revisionGestion: 0 } });
     expect(response.statusCode).toBe(500);
     expect(response.json().error.message).toBe("No fue posible registrar la gestión.");
     expect(response.body).not.toContain("internal fake detail");
@@ -112,5 +118,25 @@ describe("API de lectura", () => {
     expect(allowed.headers["access-control-allow-origin"]).toBe("http://localhost:8443");
     expect(allowed.headers["access-control-allow-credentials"]).toBe("true");
     expect(denied.headers["access-control-allow-origin"]).toBeUndefined();
+  });
+  it("reserva cambios de estado y reapertura a ADMIN en Fastify", async () => {
+    const id = "00000000-0000-4000-8000-000000000001";
+    for (const operation of ["estado-gestion", "reabrir"]) {
+      for (const role of ["professional", "lector", "coordinator", "invalid"]) {
+        const response = await app.inject({ method: "POST", url: `/api/garantias/${id}/${operation}`, headers: { cookie: `ges_session=${role}`, origin: "http://localhost:8443" }, payload: {} });
+        expect(response.statusCode).toBe(role === "invalid" ? 401 : 403);
+      }
+    }
+    expect(mocks.manage).not.toHaveBeenCalled();
+    mocks.manage.mockResolvedValue({ estadoGestion: "CUMPLIDA", revisionGestion: 1 });
+    const headers = { cookie: "ges_session=admin", origin: "http://localhost:8443" };
+    const noEvidence = await app.inject({ method: "POST", url: `/api/garantias/${id}/estado-gestion`, headers, payload: { estadoGestion: "CUMPLIDA", respaldo: " ", revisionGestion: 0 } });
+    expect(noEvidence.statusCode).toBe(400);
+    const completed = await app.inject({ method: "POST", url: `/api/garantias/${id}/estado-gestion`, headers, payload: { estadoGestion: "CUMPLIDA", respaldo: "Verificado", revisionGestion: 0 } });
+    expect(completed.statusCode).toBe(200);
+    const noReason = await app.inject({ method: "POST", url: `/api/garantias/${id}/reabrir`, headers, payload: { motivo: " ", revisionGestion: 1 } });
+    expect(noReason.statusCode).toBe(400);
+    const reopened = await app.inject({ method: "POST", url: `/api/garantias/${id}/reabrir`, headers, payload: { motivo: "Nueva revisión", revisionGestion: 1 } });
+    expect(reopened.statusCode).toBe(200);
   });
 });

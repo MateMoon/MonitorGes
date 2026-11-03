@@ -26,6 +26,30 @@ enum EstadoEnvioCorreo {
   FALLIDO
 }
 
+enum EstadoGestion {
+  SIN_GESTION
+  EN_GESTION
+  PENDIENTE_RESOLUCION
+  CUMPLIDA
+}
+
+enum TipoActuacion {
+  CONTACTO_PACIENTE
+  CITACION
+  ATENCION_REALIZADA
+  DERIVACION
+  SOLICITUD_RESPALDO
+  OTRA_GESTION
+}
+
+enum TipoEventoGarantia {
+  ACTUACION
+  CAMBIO_ESTADO
+  CUMPLIMIENTO
+  REAPERTURA
+  ANTECEDENTE_LEGADO
+}
+
 model Paciente {
   id         String     @id @default(uuid()) @db.Uuid
   rutNumero  String
@@ -51,12 +75,38 @@ model Garantia {
   gestionadaAt            DateTime?
   gestionadaPorUsuarioId  String?   @db.Uuid
   version                 Int       @default(1)
+  estadoGestion           EstadoGestion @default(SIN_GESTION)
+  revisionGestion         Int       @default(0)
+  eventos                 EventoGarantia[]
   paciente                Paciente @relation(fields: [pacienteId], references: [id], onDelete: Restrict)
   gestionadaPor           Usuario?  @relation("Gestionadas", fields: [gestionadaPorUsuarioId], references: [id], onDelete: SetNull)
 
   @@index([fechaLimite])
   @@index([responsable])
   @@index([pacienteId])
+  @@index([estadoGestion, fechaLimite])
+}
+
+// Cronología extensible: futuras categorías se agregan sin sustituir eventos anteriores.
+model EventoGarantia {
+  id              String             @id @default(uuid()) @db.Uuid
+  secuencia       Int                @unique @default(autoincrement())
+  garantiaId      String             @db.Uuid
+  usuarioId       String?            @db.Uuid
+  autorNombre     String?
+  tipo            TipoEventoGarantia
+  tipoActuacion   TipoActuacion?
+  comentario      String?
+  estadoAnterior  EstadoGestion?
+  estadoNuevo     EstadoGestion?
+  respaldo        String?
+  createdAt       DateTime           @default(now())
+  metadatos       Json?
+  claveLegado     String?            @unique
+  garantia        Garantia           @relation(fields: [garantiaId], references: [id], onDelete: Restrict)
+  usuario         Usuario?           @relation(fields: [usuarioId], references: [id], onDelete: SetNull)
+
+  @@index([garantiaId, createdAt, secuencia])
 }
 
 model Usuario {
@@ -74,6 +124,7 @@ model Usuario {
   importaciones  Importacion[]
   garantias      Garantia[]    @relation("Gestionadas")
   sesiones       SesionUsuario[]
+  eventosGarantia EventoGarantia[]
   areasResponsabilidad AreaResponsabilidad[] @relation("AreaUsuario")
   areasCreadas   AreaResponsabilidad[] @relation("AreaCreador")
   areasActualizadas AreaResponsabilidad[] @relation("AreaActualizador")

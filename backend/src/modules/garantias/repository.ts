@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../../db/prisma.js";
 import type { ListQuery } from "./schema.js";
+import { eventSelect, timelineOrder } from "./management-repository.js";
 
 export async function listGuarantees(query: ListQuery, currentDate: string) {
   const states = query.estado ? (Array.isArray(query.estado) ? query.estado : query.estado.split(",")).map((s) => s.trim().toLowerCase()) : [];
@@ -23,6 +24,8 @@ export async function listGuarantees(query: ListQuery, currentDate: string) {
   }
   if (query.nombre) patientFilters.push({ nombre: { contains: query.nombre, mode: "insensitive" } });
   const where: Prisma.GarantiaWhereInput = {
+    ...(query.estadoGestion ? { estadoGestion: query.estadoGestion } : {}),
+    ...(query.soloPendientes ? { AND: [{ estadoGestion: { not: "CUMPLIDA" } }] } : {}),
     ...(patientFilters.length ? { paciente: { AND: patientFilters } } : {}),
     ...(query.responsable ? { responsable: { equals: query.responsable, mode: "insensitive" } } : {}),
     ...(query.problemaSalud ? { problemaSalud: { equals: query.problemaSalud, mode: "insensitive" } } : {}),
@@ -37,17 +40,7 @@ export async function listGuarantees(query: ListQuery, currentDate: string) {
   return { total, rows };
 }
 
-export const findGuarantee = (id: string) => prisma.garantia.findUnique({ where: { id }, include: { paciente: true, gestionadaPor: { select: { id: true, nombre: true } } } });
-
-/** Registra solo los campos de última gestión; no altera responsable, plazo, versión ni updatedAt. */
-export async function recordGuaranteeManagement(id: string, usuarioId: string, gestionadaAt = new Date()): Promise<Date | null> {
-  const updatedRows = await prisma.$executeRaw`
-    UPDATE "Garantia"
-    SET "gestionadaAt" = ${gestionadaAt}, "gestionadaPorUsuarioId" = ${usuarioId}
-    WHERE "id" = ${id}::uuid
-  `;
-  return updatedRows === 1 ? gestionadaAt : null;
-}
+export const findGuarantee = (id: string) => prisma.garantia.findUnique({ where: { id }, include: { paciente: true, gestionadaPor: { select: { id: true, nombre: true } }, eventos: { select: eventSelect, orderBy: timelineOrder } } });
 
 export async function listGuaranteeFilterOptions() {
   const [responsables, problemasSalud, nombresGarantia] = await Promise.all([

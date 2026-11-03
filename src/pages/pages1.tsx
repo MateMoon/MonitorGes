@@ -6,11 +6,12 @@ import { STATUS, STATUS_ORDER, fmt, rutFull, type Status } from '../data'
 import { login as authenticate, type AuthUser } from '../services/auth'
 
 import { getDashboard } from '../services/dashboard'
-import type { Garantia } from '../types'
+import type { Garantia, EstadoGestion } from '../types'
+import { MANAGEMENT, MANAGEMENT_ORDER, managementPreset } from '../management'
 import { Btn, Card, CardHeader, Days, Empty, StatusBadge, Th, cx, inputCls, tdCls } from '../ui'
 
 export type Page = 'dashboard' | 'garantias' | 'detalle' | 'importar' | 'historial' | 'alertas' | 'estadisticas' | 'configuracion'
-export type Nav = (p: Page, o?: { id?: string | number; estados?: Status[]; tab?: string }) => void
+export type Nav = (p: Page, o?: { id?: string | number; estados?: Status[]; estadoGestion?: EstadoGestion; soloPendientes?: boolean; tab?: string }) => void
 
 export function Logo({ light, size = 36 }: { light?: boolean; size?: number }) {
   return (
@@ -89,9 +90,10 @@ export function Dashboard({ nav }: { nav: Nav }) {
         <Btn variant="primary" onClick={() => nav('importar')}><FileSpreadsheet className="size-4" />Importar nómina</Btn>
       </div>
 
+      <p className="text-xs font-semibold uppercase tracking-wider text-muted">Plazo restante · garantías no cumplidas</p>
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-5">
         {STATUS_ORDER.map((s) => (
-          <button key={s} onClick={() => nav('garantias', { estados: [s] })}
+          <button key={s} onClick={() => nav('garantias', { estados: [s], soloPendientes: true })}
             className={cx('group rounded-xl border border-line border-t-4 bg-white p-5 text-left shadow-[0_1px_2px_rgba(16,24,40,0.04)] transition hover:-translate-y-0.5 hover:shadow-md', STATUS[s].card, s === 'normal' && 'col-span-1')}>
             <div className="flex items-center justify-between">
               <StatusBadge s={s} />
@@ -103,10 +105,20 @@ export function Dashboard({ nav }: { nav: Nav }) {
         ))}
       </div>
 
+      <section aria-label="Seguimiento de gestión" className="space-y-3">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted">Seguimiento de gestión · todas las garantías</h3>
+        <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+          {MANAGEMENT_ORDER.map((state) => <button key={state} onClick={() => nav('garantias', managementPreset(state))} className="rounded-xl border border-line bg-white px-5 py-3.5 text-left transition hover:bg-canvas">
+            <span className={cx('inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset', MANAGEMENT[state].badge)}>{MANAGEMENT[state].label}</span>
+            <p className="tnum mt-2 text-2xl font-semibold">{loading || error ? '—' : dashboard?.conteosPorGestion[state]}</p>
+            <p className="mt-1 text-xs text-muted">{MANAGEMENT[state].desc}</p>
+          </button>)}
+        </div>
+      </section>
       <div className="grid grid-cols-1 gap-6">
         <Card className="overflow-hidden">
-          <CardHeader title="Requieren atención" sub="Garantías vencidas o con fecha límite dentro de los próximos 7 días"
-            right={<Btn variant="ghost" onClick={() => nav('garantias', { estados: ['vencida', 'critica'] })}>Ver todas<ChevronRight className="size-4" /></Btn>} />
+          <CardHeader title="Requieren atención" sub="Garantías no cumplidas: vencidas o con fecha límite dentro de los próximos 7 días"
+            right={<Btn variant="ghost" onClick={() => nav('garantias', { estados: ['vencida', 'critica'], soloPendientes: true })}>Ver todas<ChevronRight className="size-4" /></Btn>} />
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead><tr><th className="w-1 bg-[#f8f9fb] p-0" /><Th>Estado</Th><Th>RUT</Th><Th>Paciente</Th><Th>Problema de salud</Th><Th>Garantía</Th><Th>Responsable</Th><Th>Fecha límite</Th><Th>Días restantes</Th></tr></thead>

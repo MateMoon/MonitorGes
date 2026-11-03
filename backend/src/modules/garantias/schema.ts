@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MANAGEMENT_STATES } from "./management.js";
 
 const civilDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((value) => {
   const date = new Date(`${value}T00:00:00.000Z`);
@@ -9,6 +10,8 @@ export const listQuerySchema = z.object({
   rut: z.string().trim().optional(), nombre: z.string().trim().optional(),
   estado: z.union([z.string(), z.array(z.string())]).optional(), responsable: z.string().trim().optional(),
   problemaSalud: z.string().trim().optional(), nombreGarantia: z.string().trim().optional(),
+  estadoGestion: z.enum(MANAGEMENT_STATES).optional(),
+  soloPendientes: z.enum(["true", "false"]).transform((value) => value === "true").optional(),
   fechaLimiteDesde: civilDate.optional(), fechaLimiteHasta: civilDate.optional(),
   page: z.coerce.number().int().min(1).default(1), limit: z.coerce.number().int().min(1).max(100).default(25),
   sort: z.enum(["fechaLimite", "fechaInicio", "nombreGarantia", "responsable", "createdAt"]).default("fechaLimite"),

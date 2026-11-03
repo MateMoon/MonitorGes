@@ -1,5 +1,5 @@
 ﻿import type { Status } from '../data';
-import type { Garantia } from '../types';
+import type { Garantia, EstadoGestion } from '../types';
 import { apiRequest } from './api';
 
 interface GarantiaApi {
@@ -18,6 +18,8 @@ interface GarantiaApi {
 interface DashboardApi {
   data: {
     total: number;
+    totalPendientes: number;
+    conteosPorGestion: Record<EstadoGestion, number>;
     conteosPorEstado: Record<Status, number>;
     garantiasUrgentes: GarantiaApi[];
     ultimaImportacion: {

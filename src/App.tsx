@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { getCurrentUser, logout, type AuthUser } from './services/auth'
-import { registrarGestionGarantia } from './services/garantias'
+import { registrarGestionGarantia, type ActuacionInput } from './services/garantias'
+import type { EstadoGestion } from './types'
 import { Bell, CheckCircle2, History, LayoutDashboard, ListChecks, LogOut, Settings, Siren, Upload } from 'lucide-react'
 import type { Status } from './data'
 import { Alertas, Configuracion, Historial, Importar } from './pages/pages2'
@@ -25,6 +26,8 @@ export default function App() {
   const [page, setPage] = useState<Page>('dashboard')
   const [sel, setSel] = useState<string | number>(1)
   const [preset, setPreset] = useState<Status[] | undefined>()
+  const [gestionPreset, setGestionPreset] = useState<EstadoGestion | undefined>()
+  const [pendingPreset, setPendingPreset] = useState(false)
   const [tab, setTab] = useState<string | undefined>()
   const [navKey, setNavKey] = useState(0)
   const [toastMsg, setToastMsg] = useState<string | null>(null)
@@ -37,10 +40,11 @@ export default function App() {
     setPage(p); setNavKey((k) => k + 1)
     if (o?.id) setSel(o.id)
     setPreset(o?.estados); setTab(o?.tab)
+    setGestionPreset(o?.estadoGestion); setPendingPreset(o?.soloPendientes ?? false)
     window.scrollTo({ top: 0 })
   }
-  const gestionar = async (id: string | number) => {
-    const result = await registrarGestionGarantia(id)
+  const gestionar = async (id: string | number, input: ActuacionInput) => {
+    const result = await registrarGestionGarantia(id, input)
     toast('Gestión registrada correctamente.')
     return result
   }
@@ -91,8 +95,8 @@ export default function App() {
 
         <main key={navKey} className="mx-auto max-w-[1500px] p-6 lg:p-8">
           {page === 'dashboard' && <Dashboard nav={nav} />}
-          {page === 'garantias' && <Garantias nav={nav} initial={preset} />}
-          {page === 'detalle' && <Detalle id={sel} nav={nav} onGestionar={gestionar} canManage={user.rol === 'ADMIN' || user.rol === 'PROFESIONAL'} />}
+          {page === 'garantias' && <Garantias nav={nav} initial={preset} initialGestion={gestionPreset} initialPending={pendingPreset} />}
+          {page === 'detalle' && <Detalle id={sel} nav={nav} onGestionar={gestionar} canManage={user.rol === 'ADMIN' || user.rol === 'PROFESIONAL'} isAdmin={user.rol === 'ADMIN'} />}
           {page === 'importar' && <Importar nav={nav} toast={toast} />}
           {page === 'historial' && <Historial />}
           {page === 'alertas' && <Alertas initialTab={tab} toast={toast} canEditEmail={user.rol === 'ADMIN'} />}

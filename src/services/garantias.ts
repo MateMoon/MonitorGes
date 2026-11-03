@@ -1,5 +1,5 @@
 ﻿import type { Status } from '../data';
-import type { Garantia } from '../types';
+import type { GarantiaSeguimiento, EstadoGestion, TipoActuacion, EventoGarantia } from '../types';
 import { apiRequest } from './api';
 
 export interface GarantiasFiltros {
@@ -9,6 +9,8 @@ export interface GarantiasFiltros {
   responsable?: string;
   problemaSalud?: string;
   nombreGarantia?: string;
+  estadoGestion?: EstadoGestion;
+  soloPendientes?: boolean;
   fechaLimiteDesde?: string;
   fechaLimiteHasta?: string;
   page?: number;
@@ -36,12 +38,20 @@ interface GarantiaApi {
   responsable: string;
   gestionadaAt: string | null;
   gestionadaPor: { id: string; nombre: string } | null;
+  estadoGestion: EstadoGestion;
+  revisionGestion: number;
+  eventos?: EventoGarantia[];
 }
 
 export interface GestionGarantiaResult {
   gestionadaAt: string;
   gestionadaPor: { id: string; nombre: string } | null;
+  estadoGestion: EstadoGestion;
+  revisionGestion: number;
+  evento: EventoGarantia;
 }
+export interface ActuacionInput { tipoActuacion: TipoActuacion; comentario?: string; revisionGestion: number }
+export interface EstadoInput { estadoGestion: Exclude<EstadoGestion, 'SIN_GESTION'>; comentario?: string; respaldo?: string; revisionGestion: number }
 
 interface ListaApi {
   data: GarantiaApi[];
@@ -66,7 +76,7 @@ function civilDateToLocalDate(value: string): Date {
   return new Date(year, month - 1, day);
 }
 
-function mapGarantia(item: GarantiaApi): Garantia {
+function mapGarantia(item: GarantiaApi): GarantiaSeguimiento {
   const [rut = item.paciente.rut, dv = ''] = item.paciente.rut.match(/^(.+)-([^-]+)$/)?.slice(1) ?? [];
   return {
     id: item.id,
@@ -82,6 +92,9 @@ function mapGarantia(item: GarantiaApi): Garantia {
     responsable: item.responsable,
     gestionadaAt: item.gestionadaAt,
     gestionadaPor: item.gestionadaPor,
+    estadoGestion: item.estadoGestion,
+    revisionGestion: item.revisionGestion,
+    eventos: item.eventos,
   };
 }
 
@@ -96,15 +109,18 @@ export async function getGarantias(filtros: GarantiasFiltros = {}, signal?: Abor
   return { data: result.data.map(mapGarantia), pagination: result.pagination };
 }
 
-export async function getGarantiaById(id: string | number, signal?: AbortSignal): Promise<Garantia> {
+export async function getGarantiaById(id: string | number, signal?: AbortSignal): Promise<GarantiaSeguimiento> {
   const result = await apiRequest<DetalleApi>(`/api/garantias/${encodeURIComponent(String(id))}`, { signal });
   return mapGarantia(result.data);
 }
 
-export async function registrarGestionGarantia(id: string | number): Promise<GestionGarantiaResult> {
-  const result = await apiRequest<{ data: GestionGarantiaResult }>(`/api/garantias/${encodeURIComponent(String(id))}/gestion`, { method: 'POST' });
+async function managementRequest(id: string | number, operation: string, input: object): Promise<GestionGarantiaResult> {
+  const result = await apiRequest<{ data: GestionGarantiaResult }>(`/api/garantias/${encodeURIComponent(String(id))}/${operation}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
   return result.data;
 }
+export const registrarGestionGarantia = (id: string | number, input: ActuacionInput) => managementRequest(id, 'gestion', input);
+export const cambiarEstadoGestion = (id: string | number, input: EstadoInput) => managementRequest(id, 'estado-gestion', input);
+export const reabrirGarantia = (id: string | number, motivo: string, revisionGestion: number) => managementRequest(id, 'reabrir', { motivo, revisionGestion });
 
 
 

@@ -7,7 +7,7 @@ export async function findReportGuarantees(fechaInforme: string): Promise<Report
   const limit = new Date(`${fechaInforme}T00:00:00.000Z`);
   limit.setUTCDate(limit.getUTCDate() + 30);
   const rows = await prisma.garantia.findMany({
-    where: { fechaLimite: { lte: limit } },
+    where: { estadoGestion: { not: "CUMPLIDA" }, fechaLimite: { lte: limit } },
     select: { id: true, nombreGarantia: true, fechaLimite: true, responsable: true, paciente: { select: { rutNumero: true, dv: true } } },
   });
   return rows.map(({ paciente, ...row }) => ({ ...row, rut: `${paciente.rutNumero}-${paciente.dv}`, fechaLimite: row.fechaLimite.toISOString().slice(0, 10) }));

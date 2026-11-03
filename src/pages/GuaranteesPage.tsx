@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { AlertCircle, ArrowLeft, ChevronLeft, ChevronRight, Eye, Loader2, Search, X } from 'lucide-react';
 import { STATUS, type Status, fmt, rutFull } from '../data';
-import { getGarantias, getGarantiaById, getGarantiaFilterOptions, type GestionGarantiaResult } from '../services/garantias';
-import type { Garantia } from '../types';
+import { getGarantias, getGarantiaById, getGarantiaFilterOptions, type GestionGarantiaResult, type ActuacionInput } from '../services/garantias';
+import type { GarantiaSeguimiento, EstadoGestion } from '../types';
+import { MANAGEMENT, MANAGEMENT_ORDER } from '../management';
+import SeguimientoGarantia from './SeguimientoGarantia';
 import { Btn, Card, CardHeader, Days, Empty, StatusBadge, Th, cx, inputCls, tdCls } from '../ui';
 import type { Nav } from './pages1';
 
@@ -10,14 +12,16 @@ const PAGE_SIZE = 12;
 const CHIP_ORDER: Status[] = ['normal', 'atencion', 'proxima', 'critica', 'vencida'];
 const DEFAULT_STATES: Status[] = ['normal', 'atencion', 'proxima', 'critica'];
 
-export function Garantias({ nav, initial }: { nav: Nav; initial?: Status[] }) {
+export function Garantias({ nav, initial, initialGestion, initialPending = false }: { nav: Nav; initial?: Status[]; initialGestion?: EstadoGestion; initialPending?: boolean }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [rows, setRows] = useState<Garantia[]>([]);
+  const [rows, setRows] = useState<GarantiaSeguimiento[]>([]);
   const [filterOptions, setFilterOptions] = useState({ responsables: [] as string[], problemasSalud: [] as string[], nombresGarantia: [] as string[] });
   const [pagination, setPagination] = useState({ page: 1, limit: PAGE_SIZE, total: 0, totalPages: 0 });
   const [q, setQ] = useState('');
   const [estados, setEstados] = useState<Set<Status>>(new Set(initial ?? DEFAULT_STATES));
+  const [gestion, setGestion] = useState<EstadoGestion | ''>(initialGestion ?? '');
+  const [soloPendientes, setSoloPendientes] = useState(initialPending);
   const [resp, setResp] = useState('');
   const [prob, setProb] = useState('');
   const [nombreGarantia, setNombreGarantia] = useState('');
@@ -34,7 +38,7 @@ export function Garantias({ nav, initial }: { nav: Nav; initial?: Status[] }) {
     return () => controller.abort();
   }, []);
 
-  useEffect(() => setPage(1), [q, estadosKey, resp, prob, nombreGarantia]);
+  useEffect(() => setPage(1), [q, estadosKey, resp, prob, nombreGarantia, gestion, soloPendientes]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -45,6 +49,8 @@ export function Garantias({ nav, initial }: { nav: Nav; initial?: Status[] }) {
     getGarantias({
       ...(queryText ? (isRut ? { rut: queryText } : { nombre: queryText }) : {}),
       estado: estadosKey ? estadosKey.split(',') as Status[] : [],
+      estadoGestion: gestion || undefined,
+      soloPendientes,
       responsable: resp.trim() || undefined,
       problemaSalud: prob.trim() || undefined,
       nombreGarantia: nombreGarantia.trim() || undefined,
@@ -63,11 +69,12 @@ export function Garantias({ nav, initial }: { nav: Nav; initial?: Status[] }) {
       })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [q, estadosKey, resp, prob, nombreGarantia, page, asc, reload]);
+  }, [q, estadosKey, resp, prob, nombreGarantia, page, asc, reload, gestion, soloPendientes]);
 
   const clean = () => {
     setQ(''); setResp(''); setProb(''); setNombreGarantia('');
     setEstados(new Set(DEFAULT_STATES));
+    setGestion(''); setSoloPendientes(false);
   };
   const toggle = (status: Status) => setEstados((previous) => {
     const next = new Set(previous);
@@ -75,7 +82,7 @@ export function Garantias({ nav, initial }: { nav: Nav; initial?: Status[] }) {
     return next;
   });
   const estadoSel = estados.size === 1 ? [...estados][0] : estados.size === CHIP_ORDER.length ? 'todos' : 'varios';
-  const dirty = Boolean(q || resp || prob || nombreGarantia) || estadosKey !== [...DEFAULT_STATES].sort().join(',');
+  const dirty = Boolean(q || resp || prob || nombreGarantia || gestion || soloPendientes) || estadosKey !== [...DEFAULT_STATES].sort().join(',');
 
   return (
     <div className="page-in space-y-4">
@@ -90,9 +97,9 @@ export function Garantias({ nav, initial }: { nav: Nav; initial?: Status[] }) {
             <input className={cx(inputCls, 'pl-9')} placeholder="Buscar por RUT o nombre…" value={q} onChange={(event) => setQ(event.target.value)} />
             {q && <button onClick={() => setQ('')} className="absolute right-2.5 top-2.5 text-muted hover:text-ink" aria-label="Limpiar búsqueda"><X className="size-4" /></button>}
           </div>
-          <select className={inputCls} value={estadoSel} onChange={(event) => setEstados(new Set(event.target.value === 'todos' ? CHIP_ORDER : event.target.value === 'varios' ? estados : [event.target.value as Status]))}>
-            <option value="todos">Estado: todos</option>
-            {estadoSel === 'varios' && <option value="varios">Estado: selección</option>}
+          <select aria-label="Estado de plazo" className={inputCls} value={estadoSel} onChange={(event) => setEstados(new Set(event.target.value === 'todos' ? CHIP_ORDER : event.target.value === 'varios' ? estados : [event.target.value as Status]))}>
+            <option value="todos">Plazo: todos</option>
+            {estadoSel === 'varios' && <option value="varios">Plazo: selección</option>}
             {CHIP_ORDER.map((status) => <option key={status} value={status}>{STATUS[status].label}</option>)}
           </select>
           <select className={inputCls} aria-label="Filtrar por responsable" value={resp} onChange={(event) => setResp(event.target.value)}>
@@ -105,6 +112,16 @@ export function Garantias({ nav, initial }: { nav: Nav; initial?: Status[] }) {
             <option value="">Garantía: todas</option>{filterOptions.nombresGarantia.map((option) => <option key={option} value={option}>{option}</option>)}
           </select>
           <Btn onClick={clean} disabled={!dirty}><X className="size-4" />Limpiar</Btn>
+        </div>
+        <div className="mt-3 flex flex-wrap items-end gap-4">
+          <label className="min-w-60 text-xs font-medium text-muted">Estado de gestión
+            <select aria-label="Estado de gestión" className={`${inputCls} mt-1`} value={gestion} onChange={(event) => {
+              const value = event.target.value as EstadoGestion | '';
+              setGestion(value);
+              if (value === 'CUMPLIDA') setSoloPendientes(false);
+            }}><option value="">Todos</option>{MANAGEMENT_ORDER.map((state) => <option key={state} value={state}>{MANAGEMENT[state].label}</option>)}</select>
+          </label>
+          <label className="flex items-center gap-2 pb-2 text-sm"><input type="checkbox" checked={soloPendientes} disabled={gestion === 'CUMPLIDA'} onChange={(event) => setSoloPendientes(event.target.checked)} />Solo pendientes operativas (excluir cumplidas)</label>
         </div>
         <div className="mt-3.5 flex flex-wrap items-center gap-2 border-t border-line pt-3.5">
           <span className="mr-1 text-xs font-medium uppercase tracking-wider text-muted">Mostrar</span>
@@ -130,7 +147,7 @@ export function Garantias({ nav, initial }: { nav: Nav; initial?: Status[] }) {
                 <tr key={guarantee.id} onClick={() => nav('detalle', { id: guarantee.id })} className={cx('group cursor-pointer transition-colors', guarantee.estado === 'critica' ? 'bg-[#fff7f6] hover:bg-[#fdeeec]' : 'hover:bg-canvas', guarantee.estado === 'vencida' && 'text-[#4a5463]')}>
                   <td className="w-1 p-0"><div className={cx('h-full min-h-[48px] w-1', STATUS[guarantee.estado].dot)} /></td>
                   <td className={tdCls}><StatusBadge s={guarantee.estado} short /></td><td className={cx(tdCls, 'font-mono text-[13px]')}>{rutFull(guarantee)}</td>
-                  <td className={cx(tdCls, 'font-medium')}>{guarantee.nombre}{guarantee.gestionadaAt && <span className="ml-2 rounded bg-[#e6f4ec] px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[#256b45]">Gestión registrada</span>}</td>
+                  <td className={cx(tdCls, 'font-medium')}>{guarantee.nombre}<span className={cx('mt-1 block w-fit rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset', MANAGEMENT[guarantee.estadoGestion].badge)}>{MANAGEMENT[guarantee.estadoGestion].label}</span></td>
                   <td className={tdCls}>{guarantee.problema}</td><td className={tdCls}>{guarantee.garantia}</td><td className={cx(tdCls, 'tnum text-muted')}>{fmt(guarantee.inicio)}</td><td className={cx(tdCls, 'tnum')}>{fmt(guarantee.limite)}</td><td className={tdCls}><Days d={guarantee.dias} /></td><td className={tdCls}>{guarantee.responsable}</td>
                   <td className={cx(tdCls, 'text-right')}><button onClick={(event) => { event.stopPropagation(); nav('detalle', { id: guarantee.id }); }} className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-sm font-medium text-brand hover:bg-brand-soft"><Eye className="size-4" />Ver</button></td>
                 </tr>
@@ -152,12 +169,11 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   return <div><dt className="text-xs font-medium uppercase tracking-wider text-muted">{label}</dt><dd className="mt-1 text-[15px] font-medium">{children}</dd></div>;
 }
 
-export function Detalle({ id, nav, onGestionar, canManage }: { id: string | number; nav: Nav; onGestionar: (id: string | number) => Promise<GestionGarantiaResult>; canManage: boolean }) {
-  const [guarantee, setGuarantee] = useState<Garantia | null>(null);
+export function Detalle({ id, nav, onGestionar, canManage, isAdmin }: { id: string | number; nav: Nav; onGestionar: (id: string | number, input: ActuacionInput) => Promise<GestionGarantiaResult>; canManage: boolean; isAdmin: boolean }) {
+  const [guarantee, setGuarantee] = useState<GarantiaSeguimiento | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [managementError, setManagementError] = useState<string | null>(null);
-  const [managementPending, setManagementPending] = useState(false);
+  const [reload, setReload] = useState(0);
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true); setError(null); setGuarantee(null);
@@ -166,25 +182,12 @@ export function Detalle({ id, nav, onGestionar, canManage }: { id: string | numb
       .catch((reason: unknown) => { if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : 'No fue posible cargar el detalle.'); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [id]);
+  }, [id, reload]);
 
   if (loading) return <Card className="flex items-center gap-3 p-6 text-sm text-muted"><Loader2 className="size-4 animate-spin" />Cargando detalle de garantía…</Card>;
   if (error || !guarantee) return <Card><Empty title="No se pudo cargar la garantía" text={error ?? 'El registro solicitado no existe.'} action={<Btn onClick={() => nav('garantias')}>Volver al listado</Btn>} /></Card>;
 
   const done = guarantee.gestionadaAt != null;
-  const registerManagement = async () => {
-    if (!canManage || managementPending) return;
-    setManagementPending(true);
-    setManagementError(null);
-    try {
-      const latestManagement = await onGestionar(guarantee.id);
-      setGuarantee((current) => current ? { ...current, ...latestManagement } : current);
-    } catch (cause) {
-      setManagementError(cause instanceof Error ? cause.message : 'No fue posible registrar la gestión. Intenta nuevamente.');
-    } finally {
-      setManagementPending(false);
-    }
-  };
   const managedAt = guarantee.gestionadaAt
     ? new Intl.DateTimeFormat('es-CL', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Santiago' }).format(new Date(guarantee.gestionadaAt))
     : null;
@@ -193,9 +196,8 @@ export function Detalle({ id, nav, onGestionar, canManage }: { id: string | numb
     <div className="page-in space-y-5">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3"><button onClick={() => nav('garantias')} className="grid size-9 place-items-center rounded-lg border border-line bg-white hover:bg-canvas" aria-label="Volver"><ArrowLeft className="size-4" /></button><div><h2 className="text-2xl font-semibold">Detalle de garantía</h2><p className="text-sm text-muted">Garantías / {guarantee.nombre}</p></div></div>
-        <div className="flex gap-2"><Btn onClick={() => nav('garantias')}>Volver</Btn>{canManage && <Btn variant="primary" onClick={() => void registerManagement()} disabled={managementPending}>{managementPending ? <><Loader2 className="size-4 animate-spin" />Registrando…</> : done ? 'Registrar nueva gestión' : 'Registrar gestión'}</Btn>}</div>
+        <div className="flex gap-2"><Btn onClick={() => nav('garantias')}>Volver</Btn></div>
       </div>
-      {managementError && <div role="alert" className="rounded-lg border border-[#f1b9b4] bg-white p-4 text-sm text-[#a12a22]">{managementError}</div>}
       <div className={cx('flex items-center justify-between rounded-xl border-2 px-7 py-5', hero)}>
         <div><p className="text-xs font-semibold uppercase tracking-wider text-muted">Fecha límite</p><p className="tnum text-3xl font-semibold">{fmt(guarantee.limite)}</p></div>
         <div className="text-center"><p className="text-xs font-semibold uppercase tracking-wider text-muted">{guarantee.dias < 0 ? 'Vencida' : 'Plazo restante'}</p><p className="text-3xl font-semibold">{guarantee.dias < 0 ? `Hace ${-guarantee.dias} días` : guarantee.dias === 0 ? 'Vence hoy' : `Faltan ${guarantee.dias} ${guarantee.dias === 1 ? 'día' : 'días'}`}</p></div>
@@ -206,6 +208,9 @@ export function Detalle({ id, nav, onGestionar, canManage }: { id: string | numb
           <Card><CardHeader title="Información de la garantía" /><dl className="grid grid-cols-2 gap-5 p-5"><Field label="Problema de salud">{guarantee.problema}</Field><Field label="Nombre de la garantía">{guarantee.garantia}</Field><Field label="Fecha de inicio"><span className="tnum">{fmt(guarantee.inicio)}</span></Field><Field label="Fecha límite"><span className="tnum">{fmt(guarantee.limite)}</span></Field><Field label="Días restantes"><Days d={guarantee.dias} /></Field><Field label="Estado"><StatusBadge s={guarantee.estado} /></Field><Field label="Responsable">{guarantee.responsable}</Field><Field label="Última gestión registrada">{done ? <span className="text-[#256b45]">{managedAt} · {guarantee.gestionadaPor?.nombre ?? 'Funcionario no disponible'}</span> : <span className="text-muted">Sin gestiones registradas</span>}</Field></dl><p className="border-t border-line px-5 py-3 text-xs text-muted">Registrar una gestión no significa que la garantía esté cumplida ni la cierra.</p></Card>
         </div>
       </div>
+      <SeguimientoGarantia guarantee={guarantee} canManage={canManage} isAdmin={isAdmin} onGestionar={onGestionar} onRefresh={() => setReload((value) => value + 1)} onSaved={(result) => {
+        setGuarantee((current) => current ? { ...current, ...result, eventos: [result.evento, ...(current.eventos ?? [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.secuencia - a.secuencia) } : current);
+      }} />
     </div>
   );
 }

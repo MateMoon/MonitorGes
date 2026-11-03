@@ -1,5 +1,5 @@
 import { dateToCivil, todayInTimeZone } from "../../utils/dates.js";
-import { findGuarantee, listGuarantees, listGuaranteeFilterOptions } from "./repository.js";
+import { findGuarantee, listGuarantees, listGuaranteeFilterOptions, recordGuaranteeManagement } from "./repository.js";
 import { getDaysRemaining, getGuaranteeStatus } from "./status.js";
 
 export function serializeGuarantee(row: any, today: string) {
@@ -21,3 +21,8 @@ export async function getGuarantee(id: string) {
 }
 
 export const getGuaranteeFilterOptions = () => listGuaranteeFilterOptions();
+
+export async function registerGuaranteeManagement(id: string, user: { id: string; nombre: string }) {
+  const gestionadaAt = await recordGuaranteeManagement(id, user.id);
+  return gestionadaAt ? { gestionadaAt, gestionadaPor: { id: user.id, nombre: user.nombre } } : null;
+}

@@ -9,6 +9,7 @@ import { buildApp } from "../src/app.js";
 
 const admin = { id: "admin-1", username: "admin", nombre: "Admin QA", email: "admin@example.test", rol: "ADMIN" } as const;
 const lector = { id: "reader-1", username: "reader", nombre: "Lector QA", email: "reader@example.test", rol: "LECTOR" } as const;
+const coordinator = { id: "coord-1", username: "coord", nombre: "Coordinador QA", email: "coord@example.test", rol: "COORDINADOR_SOME", puedeCargarNominas: true } as const;
 
 describe("acceso a configuracion de correo", () => {
   const app = buildApp();
@@ -16,7 +17,7 @@ describe("acceso a configuracion de correo", () => {
     mocks.get.mockReset(); mocks.save.mockReset(); mocks.getSessionUser.mockReset();
     mocks.get.mockResolvedValue({ emails: ["qa@example.test", "second@example.test"], email: "qa@example.test", updatedAt: null, automaticEnabled: false, scheduledTime: "08:00" });
     mocks.save.mockResolvedValue({ emails: ["qa@example.test"], email: "qa@example.test", updatedAt: new Date("2026-10-13T12:00:00.000Z") });
-    mocks.getSessionUser.mockImplementation(async (token: string) => token === "admin-cookie" ? admin : token === "reader-cookie" ? lector : null);
+    mocks.getSessionUser.mockImplementation(async (token: string) => token === "admin-cookie" ? admin : token === "reader-cookie" ? lector : token === "coord-cookie" ? coordinator : null);
   });
   afterAll(async () => { await app.close(); });
 
@@ -34,6 +35,12 @@ describe("acceso a configuracion de correo", () => {
 
   it("devuelve 403 a un lector y no cambia el destinatario", async () => {
     const response = await app.inject({ method: "PUT", url: "/api/notificaciones/configuracion-correo", headers: { cookie: "ges_session=reader-cookie", origin: "http://localhost:8443" }, payload: { emails: ["attacker@example.test"] } });
+    expect(response.statusCode).toBe(403);
+    expect(mocks.save).not.toHaveBeenCalled();
+  });
+
+  it("denies global email configuration changes to COORDINADOR_SOME", async () => {
+    const response = await app.inject({ method: "PUT", url: "/api/notificaciones/configuracion-correo", headers: { cookie: "ges_session=coord-cookie", origin: "http://localhost:8443" }, payload: { emails: ["ops@example.test"] } });
     expect(response.statusCode).toBe(403);
     expect(mocks.save).not.toHaveBeenCalled();
   });

@@ -92,7 +92,7 @@ function seededGuarantee(patientId: string, changes: Record<string, unknown> = {
 }
 
 beforeEach(() => {
-  authMocks.getSessionUser.mockResolvedValue({ id: "professional-1", username: "profesional", nombre: "Profesional QA", email: "qa@example.test", rol: "PROFESIONAL" });
+  authMocks.getSessionUser.mockResolvedValue({ id: "professional-1", username: "profesional", nombre: "Profesional QA", email: "qa@example.test", rol: "PROFESIONAL", puedeCargarNominas: true });
   memory.patients.splice(0); memory.guarantees.splice(0); memory.imports.splice(0); memory.errors.splice(0);
   memory.nextId = 1; memory.failGuaranteeCreate = false;
 });
@@ -128,6 +128,14 @@ describe("importación persistente", () => {
     expect(memory.imports[0].id).toBe(result.id);
   });
 
+  it("persiste el RUT/DV compuesto en el formato numérico que consume el lector de candidatos", async () => {
+    const combinedRutRow = [...baseRow];
+    combinedRutRow[1] = "12.345.678-5";
+    combinedRutRow[2] = "5";
+    await importWorkbook(await makeXlsx([combinedRutRow]), "rut-compuesto.xlsx", "professional-1");
+    expect(memory.patients).toMatchObject([{ rutNumero: "12345678", dv: "5" }]);
+  });
+
   it("reutiliza pacientes y permite varias garantías para el mismo RUT", async () => {
     seededPatient();
     const second = [...baseRow]; second[5] = "15/01/2027"; second[7] = "Garantía B";
@@ -154,6 +162,19 @@ describe("importación persistente", () => {
     expect(memory.guarantees[0].fechaLimite.toISOString().slice(0, 10)).toBe("2027-01-15");
     expect(memory.guarantees[0].responsable).toBe("Centro B");
     expect(memory.guarantees[0].problemaSalud).toBe("Problema A");
+  });
+
+  it("conserva la última gestión registrada cuando una importación actualiza los campos fuente", async () => {
+    const patientId = seededPatient();
+    const managedAt = new Date("2026-10-20T12:30:00.000Z");
+    seededGuarantee(patientId, { gestionadaAt: managedAt, gestionadaPorUsuarioId: "user-manager-fake" });
+    const changed = [...baseRow]; changed[5] = "15/01/2027"; changed[8] = "Centro B";
+
+    const result = await importWorkbook(await makeXlsx([changed]), "actualizacion-gestion.xlsx", "professional-1");
+
+    expect(result.registrosActualizados).toBe(1);
+    expect(memory.guarantees[0].gestionadaAt).toEqual(managedAt);
+    expect(memory.guarantees[0].gestionadaPorUsuarioId).toBe("user-manager-fake");
   });
 
   it("marca como ambigua una identidad con varias coincidencias sin actualizarlas", async () => {

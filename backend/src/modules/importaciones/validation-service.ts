@@ -3,8 +3,11 @@ import path from "node:path";
 
 export const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const PREVIEW_LIMIT = 10;
+/** Límite inicial para proteger la vista previa frente a nóminas inusualmente grandes. */
+export const MAX_COMPARISON_ROWS = 5_000;
 
 export type ValidationError = { numeroFila: number; codigo: string; campo?: string; mensaje: string };
+export type ValidationPreviewRow = { numeroFila: number };
 export type PreviewRow = {
   numeroFila: number;
   problemaSalud: string;
@@ -22,7 +25,7 @@ export type WorkbookValidation = {
   filasLeidas: number;
   filasValidas: number;
   filasConErrores: number;
-  vistaPrevia: PreviewRow[];
+  vistaPrevia: ValidationPreviewRow[];
   errores: ValidationError[];
 };
 
@@ -126,7 +129,12 @@ function isBlankRow(row: ExcelJS.Row, columnCount: number): boolean {
   return true;
 }
 
-async function validateWorkbookInternal(buffer: Buffer, filename: string): Promise<WorkbookValidation & { registrosValidos: PreviewRow[] }> {
+type InternalWorkbookValidation = Omit<WorkbookValidation, "vistaPrevia"> & {
+  vistaPrevia: PreviewRow[];
+  registrosValidos: PreviewRow[];
+};
+
+async function validateWorkbookInternal(buffer: Buffer, filename: string, maxRows?: number): Promise<InternalWorkbookValidation> {
   if (buffer.length === 0) throw new WorkbookInputError("EMPTY_FILE", "El archivo está vacío.");
   if (buffer.length > MAX_FILE_SIZE) throw new WorkbookInputError("FILE_TOO_LARGE", "El archivo supera el límite de 10 MB.", 413);
   const safeFilename = path.basename(filename.replace(/\\/g, "/")).slice(0, 255);
@@ -143,6 +151,10 @@ async function validateWorkbookInternal(buffer: Buffer, filename: string): Promi
   if (!sheet || sheet.rowCount < 1 || sheet.columnCount < 1) throw new WorkbookInputError("EMPTY_FILE", "El libro no contiene una hoja con encabezados.");
 
   const detectedHeader = detectHeaderRow(sheet);
+  const dataRows = sheet.rowCount - detectedHeader.rowNumber;
+  if (maxRows !== undefined && dataRows > maxRows) {
+    throw new WorkbookInputError("TOO_MANY_ROWS", `La comparación admite un máximo de ${maxRows.toLocaleString("es-CL")} filas de datos.`, 413);
+  }
   const index = Object.fromEntries(REQUIRED_HEADERS.map((header) => [header, detectedHeader.columns.get(header)!])) as Record<(typeof REQUIRED_HEADERS)[number], number>;
   const errors: ValidationError[] = [];
   const preview: PreviewRow[] = [];
@@ -224,10 +236,16 @@ async function validateWorkbookInternal(buffer: Buffer, filename: string): Promi
 
 export async function validateWorkbook(buffer: Buffer, filename: string): Promise<WorkbookValidation> {
   const { registrosValidos: _registrosValidos, ...validation } = await validateWorkbookInternal(buffer, filename);
-  return validation;
+  return { ...validation, vistaPrevia: validation.vistaPrevia.map(({ numeroFila }) => ({ numeroFila })) };
 }
 
 export async function parseWorkbookForImport(buffer: Buffer, filename: string) {
   const { registrosValidos, ...validation } = await validateWorkbookInternal(buffer, filename);
   return { validation, registrosValidos };
+}
+
+/** Camino acotado exclusivo de la vista previa; el importador definitivo conserva el validador sin límite. */
+export async function parseWorkbookForComparison(buffer: Buffer, filename: string) {
+  const { registrosValidos, ...validation } = await validateWorkbookInternal(buffer, filename, MAX_COMPARISON_ROWS);
+  return { validation: { ...validation, vistaPrevia: validation.vistaPrevia.map(({ numeroFila }) => ({ numeroFila })) }, registrosValidos };
 }

@@ -39,6 +39,16 @@ export async function listGuarantees(query: ListQuery, currentDate: string) {
 
 export const findGuarantee = (id: string) => prisma.garantia.findUnique({ where: { id }, include: { paciente: true, gestionadaPor: { select: { id: true, nombre: true } } } });
 
+/** Registra solo los campos de última gestión; no altera responsable, plazo, versión ni updatedAt. */
+export async function recordGuaranteeManagement(id: string, usuarioId: string, gestionadaAt = new Date()): Promise<Date | null> {
+  const updatedRows = await prisma.$executeRaw`
+    UPDATE "Garantia"
+    SET "gestionadaAt" = ${gestionadaAt}, "gestionadaPorUsuarioId" = ${usuarioId}
+    WHERE "id" = ${id}::uuid
+  `;
+  return updatedRows === 1 ? gestionadaAt : null;
+}
+
 export async function listGuaranteeFilterOptions() {
   const [responsables, problemasSalud, nombresGarantia] = await Promise.all([
     prisma.garantia.findMany({ distinct: ["responsable"], select: { responsable: true }, orderBy: { responsable: "asc" } }),

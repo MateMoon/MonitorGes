@@ -4,11 +4,13 @@ import { prisma } from "../../db/prisma.js";
 import { hashPassword } from "../auth/auth-service.js";
 import { requireRoles } from "../auth/routes.js";
 
-const roles = ["ADMIN", "PROFESIONAL", "LECTOR"] as const;
-const createSchema = z.object({ nombre: z.string().trim().min(2).max(120), username: z.string().trim().min(3).max(100).regex(/^[\w.-]+$/), email: z.string().trim().email().max(254), rol: z.enum(roles), password: z.string().min(12).max(128) }).strict();
-const updateSchema = z.object({ nombre: z.string().trim().min(2).max(120), email: z.string().trim().email().max(254), rol: z.enum(roles), activo: z.boolean() }).strict();
+const roles = ["ADMIN", "COORDINADOR_SOME", "PROFESIONAL", "LECTOR"] as const;
+const createSchema = z.object({ nombre: z.string().trim().min(2).max(120), username: z.string().trim().min(3).max(100).regex(/^[\w.-]+$/), email: z.string().trim().email().max(254), rol: z.enum(roles), puedeCargarNominas: z.boolean().optional().default(false), password: z.string().min(12).max(128) }).strict()
+  .refine((user) => user.rol !== "LECTOR" || !user.puedeCargarNominas, { message: "LECTOR no puede recibir permiso para cargar nóminas.", path: ["puedeCargarNominas"] });
+const updateSchema = z.object({ nombre: z.string().trim().min(2).max(120), email: z.string().trim().email().max(254), rol: z.enum(roles), activo: z.boolean(), puedeCargarNominas: z.boolean().optional() }).strict()
+  .refine((user) => user.rol !== "LECTOR" || user.puedeCargarNominas !== true, { message: "LECTOR no puede recibir permiso para cargar nóminas.", path: ["puedeCargarNominas"] });
 const passwordSchema = z.object({ password: z.string().min(12).max(128) }).strict();
-const safeSelect = { id: true, nombre: true, username: true, email: true, rol: true, activo: true, ultimoAccesoAt: true, createdAt: true } as const;
+const safeSelect = { id: true, nombre: true, username: true, email: true, rol: true, puedeCargarNominas: true, activo: true, ultimoAccesoAt: true, createdAt: true } as const;
 
 export async function userRoutes(app: FastifyInstance) {
   app.get("/", { preHandler: requireRoles("ADMIN") }, async () => ({ data: await prisma.usuario.findMany({ select: safeSelect, orderBy: [{ activo: "desc" }, { nombre: "asc" }] }) }));
@@ -30,7 +32,7 @@ export async function userRoutes(app: FastifyInstance) {
   app.put<{ Params: { id: string }; Body: unknown }>("/:id", { preHandler: requireRoles("ADMIN") }, async (request, reply) => {
     const parsed = updateSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: { code: "VALIDATION_ERROR", message: "Revisa los datos del usuario.", details: parsed.error.issues } });
-    const existing = await prisma.usuario.findUnique({ where: { id: request.params.id }, select: { id: true, rol: true, activo: true } });
+    const existing = await prisma.usuario.findUnique({ where: { id: request.params.id }, select: { id: true, rol: true, activo: true, puedeCargarNominas: true } });
     if (!existing) return reply.code(404).send({ error: { code: "USER_NOT_FOUND", message: "No se encontró el usuario.", details: [] } });
     const removesAdmin = existing.rol === "ADMIN" && existing.activo && (parsed.data.rol !== "ADMIN" || !parsed.data.activo);
     if (removesAdmin) {
@@ -38,7 +40,11 @@ export async function userRoutes(app: FastifyInstance) {
       if (admins <= 1) return reply.code(409).send({ error: { code: "LAST_ADMIN", message: "Debe quedar al menos un administrador activo.", details: [] } });
     }
     try {
-      const user = await prisma.usuario.update({ where: { id: request.params.id }, data: parsed.data, select: safeSelect });
+      const permissionChangedByRole = parsed.data.rol !== existing.rol;
+      const puedeCargarNominas = parsed.data.rol === "LECTOR"
+        ? false
+        : parsed.data.puedeCargarNominas ?? (permissionChangedByRole ? false : existing.puedeCargarNominas);
+      const user = await prisma.usuario.update({ where: { id: request.params.id }, data: { ...parsed.data, puedeCargarNominas }, select: safeSelect });
       if (!user.activo) await prisma.sesionUsuario.deleteMany({ where: { usuarioId: user.id } });
       return { data: user };
     } catch (error) {

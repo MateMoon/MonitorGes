@@ -3,7 +3,9 @@ import { MAX_FILE_SIZE, WorkbookInputError, validateWorkbook } from "./validatio
 import { importWorkbook } from "./import-service.js";
 import { importHistoryQuerySchema } from "./schema.js";
 import { listImports } from "./repository.js";
-import { requireAuthenticated, requireRoles } from "../auth/routes.js";
+import { findExistingMatchCandidates } from "./candidate-repository.js";
+import { previewWorkbookComparison } from "./comparison-preview-service.js";
+import { requireAuthenticated, requireImportPermission } from "../auth/routes.js";
 
 async function uploadedFile(request: FastifyRequest) {
   const file = await request.file();
@@ -31,7 +33,7 @@ export async function importValidationRoutes(app: FastifyInstance) {
     return { ...(await listImports(parsed.data)) };
   });
 
-  app.post("/validar", { preHandler: requireRoles("ADMIN", "PROFESIONAL") }, async (request, reply) => {
+  app.post("/validar", { preHandler: requireImportPermission }, async (request, reply) => {
     try {
       const { buffer, filename } = await uploadedFile(request);
       return reply.code(200).send({ data: await validateWorkbook(buffer, filename) });
@@ -40,7 +42,21 @@ export async function importValidationRoutes(app: FastifyInstance) {
     }
   });
 
-  app.post("/", { preHandler: requireRoles("ADMIN", "PROFESIONAL") }, async (request, reply) => {
+  app.post("/comparar", { preHandler: requireImportPermission }, async (request, reply) => {
+    try {
+      const { buffer, filename } = await uploadedFile(request);
+      return reply.code(200).send({ data: await previewWorkbookComparison(buffer, filename, findExistingMatchCandidates) });
+    } catch (error) {
+      const fileError = error as { code?: string; statusCode?: number };
+      if (error instanceof WorkbookInputError || fileError.code === "FST_REQ_FILE_TOO_LARGE" || fileError.statusCode === 413) {
+        return uploadError(error, reply, request, 400);
+      }
+      request.log.error("Falló la vista previa de comparación de la nómina");
+      return reply.code(500).send({ error: { code: "COMPARISON_FAILED", message: "No fue posible comparar el archivo.", details: [] }, requestId: request.id });
+    }
+  });
+
+  app.post("/", { preHandler: requireImportPermission }, async (request, reply) => {
     try {
       const { buffer, filename } = await uploadedFile(request);
       return reply.code(201).send({ data: await importWorkbook(buffer, filename, request.authUser!.id) });

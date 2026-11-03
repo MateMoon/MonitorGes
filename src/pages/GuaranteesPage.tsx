@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { AlertCircle, ArrowLeft, CheckCircle2, ChevronLeft, ChevronRight, Eye, Loader2, Search, X } from 'lucide-react';
+import { AlertCircle, ArrowLeft, ChevronLeft, ChevronRight, Eye, Loader2, Search, X } from 'lucide-react';
 import { STATUS, type Status, fmt, rutFull } from '../data';
-import { getGarantias, getGarantiaById, getGarantiaFilterOptions } from '../services/garantias';
+import { getGarantias, getGarantiaById, getGarantiaFilterOptions, type GestionGarantiaResult } from '../services/garantias';
 import type { Garantia } from '../types';
 import { Btn, Card, CardHeader, Days, Empty, StatusBadge, Th, cx, inputCls, tdCls } from '../ui';
 import type { Nav } from './pages1';
@@ -10,7 +10,7 @@ const PAGE_SIZE = 12;
 const CHIP_ORDER: Status[] = ['normal', 'atencion', 'proxima', 'critica', 'vencida'];
 const DEFAULT_STATES: Status[] = ['normal', 'atencion', 'proxima', 'critica'];
 
-export function Garantias({ nav, initial, gestionadas }: { nav: Nav; initial?: Status[]; gestionadas: Set<string | number> }) {
+export function Garantias({ nav, initial }: { nav: Nav; initial?: Status[] }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [rows, setRows] = useState<Garantia[]>([]);
@@ -130,7 +130,7 @@ export function Garantias({ nav, initial, gestionadas }: { nav: Nav; initial?: S
                 <tr key={guarantee.id} onClick={() => nav('detalle', { id: guarantee.id })} className={cx('group cursor-pointer transition-colors', guarantee.estado === 'critica' ? 'bg-[#fff7f6] hover:bg-[#fdeeec]' : 'hover:bg-canvas', guarantee.estado === 'vencida' && 'text-[#4a5463]')}>
                   <td className="w-1 p-0"><div className={cx('h-full min-h-[48px] w-1', STATUS[guarantee.estado].dot)} /></td>
                   <td className={tdCls}><StatusBadge s={guarantee.estado} short /></td><td className={cx(tdCls, 'font-mono text-[13px]')}>{rutFull(guarantee)}</td>
-                  <td className={cx(tdCls, 'font-medium')}>{guarantee.nombre}{gestionadas.has(guarantee.id) && <span className="ml-2 rounded bg-[#e6f4ec] px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[#256b45]">Gestionada</span>}</td>
+                  <td className={cx(tdCls, 'font-medium')}>{guarantee.nombre}{guarantee.gestionadaAt && <span className="ml-2 rounded bg-[#e6f4ec] px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[#256b45]">Gestión registrada</span>}</td>
                   <td className={tdCls}>{guarantee.problema}</td><td className={tdCls}>{guarantee.garantia}</td><td className={cx(tdCls, 'tnum text-muted')}>{fmt(guarantee.inicio)}</td><td className={cx(tdCls, 'tnum')}>{fmt(guarantee.limite)}</td><td className={tdCls}><Days d={guarantee.dias} /></td><td className={tdCls}>{guarantee.responsable}</td>
                   <td className={cx(tdCls, 'text-right')}><button onClick={(event) => { event.stopPropagation(); nav('detalle', { id: guarantee.id }); }} className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-sm font-medium text-brand hover:bg-brand-soft"><Eye className="size-4" />Ver</button></td>
                 </tr>
@@ -152,10 +152,12 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   return <div><dt className="text-xs font-medium uppercase tracking-wider text-muted">{label}</dt><dd className="mt-1 text-[15px] font-medium">{children}</dd></div>;
 }
 
-export function Detalle({ id, nav, gestionadas, onGestionar }: { id: string | number; nav: Nav; gestionadas: Set<string | number>; onGestionar: (id: string | number) => void }) {
+export function Detalle({ id, nav, onGestionar, canManage }: { id: string | number; nav: Nav; onGestionar: (id: string | number) => Promise<GestionGarantiaResult>; canManage: boolean }) {
   const [guarantee, setGuarantee] = useState<Garantia | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [managementError, setManagementError] = useState<string | null>(null);
+  const [managementPending, setManagementPending] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true); setError(null); setGuarantee(null);
@@ -169,14 +171,31 @@ export function Detalle({ id, nav, gestionadas, onGestionar }: { id: string | nu
   if (loading) return <Card className="flex items-center gap-3 p-6 text-sm text-muted"><Loader2 className="size-4 animate-spin" />Cargando detalle de garantía…</Card>;
   if (error || !guarantee) return <Card><Empty title="No se pudo cargar la garantía" text={error ?? 'El registro solicitado no existe.'} action={<Btn onClick={() => nav('garantias')}>Volver al listado</Btn>} /></Card>;
 
-  const done = guarantee.gestionadaAt != null || gestionadas.has(guarantee.id);
+  const done = guarantee.gestionadaAt != null;
+  const registerManagement = async () => {
+    if (!canManage || managementPending) return;
+    setManagementPending(true);
+    setManagementError(null);
+    try {
+      const latestManagement = await onGestionar(guarantee.id);
+      setGuarantee((current) => current ? { ...current, ...latestManagement } : current);
+    } catch (cause) {
+      setManagementError(cause instanceof Error ? cause.message : 'No fue posible registrar la gestión. Intenta nuevamente.');
+    } finally {
+      setManagementPending(false);
+    }
+  };
+  const managedAt = guarantee.gestionadaAt
+    ? new Intl.DateTimeFormat('es-CL', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Santiago' }).format(new Date(guarantee.gestionadaAt))
+    : null;
   const hero = { normal: 'bg-[#f1f9f4] border-[#bfe1cd]', atencion: 'bg-[#fffbec] border-[#efdc9a]', proxima: 'bg-[#fff5ec] border-[#f3c9a4]', critica: 'bg-[#fff3f2] border-[#f1b9b4]', vencida: 'bg-[#eef0f3] border-[#c5cad3]' }[guarantee.estado];
   return (
     <div className="page-in space-y-5">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3"><button onClick={() => nav('garantias')} className="grid size-9 place-items-center rounded-lg border border-line bg-white hover:bg-canvas" aria-label="Volver"><ArrowLeft className="size-4" /></button><div><h2 className="text-2xl font-semibold">Detalle de garantía</h2><p className="text-sm text-muted">Garantías / {guarantee.nombre}</p></div></div>
-        <div className="flex gap-2"><Btn onClick={() => nav('garantias')}>Volver</Btn><Btn variant="primary" onClick={() => onGestionar(guarantee.id)}>{done ? <><CheckCircle2 className="size-4" />Gestionada</> : 'Marcar como gestionada'}</Btn></div>
+        <div className="flex gap-2"><Btn onClick={() => nav('garantias')}>Volver</Btn>{canManage && <Btn variant="primary" onClick={() => void registerManagement()} disabled={managementPending}>{managementPending ? <><Loader2 className="size-4 animate-spin" />Registrando…</> : done ? 'Registrar nueva gestión' : 'Registrar gestión'}</Btn>}</div>
       </div>
+      {managementError && <div role="alert" className="rounded-lg border border-[#f1b9b4] bg-white p-4 text-sm text-[#a12a22]">{managementError}</div>}
       <div className={cx('flex items-center justify-between rounded-xl border-2 px-7 py-5', hero)}>
         <div><p className="text-xs font-semibold uppercase tracking-wider text-muted">Fecha límite</p><p className="tnum text-3xl font-semibold">{fmt(guarantee.limite)}</p></div>
         <div className="text-center"><p className="text-xs font-semibold uppercase tracking-wider text-muted">{guarantee.dias < 0 ? 'Vencida' : 'Plazo restante'}</p><p className="text-3xl font-semibold">{guarantee.dias < 0 ? `Hace ${-guarantee.dias} días` : guarantee.dias === 0 ? 'Vence hoy' : `Faltan ${guarantee.dias} ${guarantee.dias === 1 ? 'día' : 'días'}`}</p></div>
@@ -184,7 +203,7 @@ export function Detalle({ id, nav, gestionadas, onGestionar }: { id: string | nu
       </div>
       <div className="grid grid-cols-1 gap-5">
         <div className="space-y-5"><Card><CardHeader title="Información del paciente" /><dl className="grid grid-cols-3 gap-5 p-5"><Field label="Nombre">{guarantee.nombre}</Field><Field label="RUT"><span className="font-mono">{guarantee.rut}</span></Field><Field label="DV">{guarantee.dv}</Field></dl></Card>
-          <Card><CardHeader title="Información de la garantía" /><dl className="grid grid-cols-2 gap-5 p-5"><Field label="Problema de salud">{guarantee.problema}</Field><Field label="Nombre de la garantía">{guarantee.garantia}</Field><Field label="Fecha de inicio"><span className="tnum">{fmt(guarantee.inicio)}</span></Field><Field label="Fecha límite"><span className="tnum">{fmt(guarantee.limite)}</span></Field><Field label="Días restantes"><Days d={guarantee.dias} /></Field><Field label="Estado"><StatusBadge s={guarantee.estado} /></Field><Field label="Responsable">{guarantee.responsable}</Field><Field label="Gestión">{done ? <span className="text-[#256b45]">Marcada como gestionada</span> : <span className="text-muted">Sin gestionar</span>}</Field></dl></Card>
+          <Card><CardHeader title="Información de la garantía" /><dl className="grid grid-cols-2 gap-5 p-5"><Field label="Problema de salud">{guarantee.problema}</Field><Field label="Nombre de la garantía">{guarantee.garantia}</Field><Field label="Fecha de inicio"><span className="tnum">{fmt(guarantee.inicio)}</span></Field><Field label="Fecha límite"><span className="tnum">{fmt(guarantee.limite)}</span></Field><Field label="Días restantes"><Days d={guarantee.dias} /></Field><Field label="Estado"><StatusBadge s={guarantee.estado} /></Field><Field label="Responsable">{guarantee.responsable}</Field><Field label="Última gestión registrada">{done ? <span className="text-[#256b45]">{managedAt} · {guarantee.gestionadaPor?.nombre ?? 'Funcionario no disponible'}</span> : <span className="text-muted">Sin gestiones registradas</span>}</Field></dl><p className="border-t border-line px-5 py-3 text-xs text-muted">Registrar una gestión no significa que la garantía esté cumplida ni la cierra.</p></Card>
         </div>
       </div>
     </div>

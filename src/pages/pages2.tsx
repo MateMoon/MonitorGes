@@ -3,7 +3,8 @@ import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, FileSpreadsheet
 import { STATUS, STATUS_ORDER, type Status } from '../data'
 import { CONTEOS, GARANTIAS_DATA, RESPONSABLES } from '../data/mockData'
 import type { Nav } from './pages1'
-import { getImportHistory, importFile, validateImportFile, type ImportHistoryItem, type ImportPagination, type ImportResult, type ImportValidationResult } from '../services/importaciones'
+import { compareImportFile, getImportHistory, importFile, validateImportFile, type ImportComparisonResult, type ImportHistoryItem, type ImportPagination, type ImportResult, type ImportValidationResult } from '../services/importaciones'
+import { ComparisonRequestGate } from '../services/comparison-request-gate'
 import { getNotificationEmailConfig, saveNotificationEmails } from '../services/notificaciones'
 import ConfiguracionUsuarios from './ConfiguracionUsuarios'
 import { Btn, Card, CardHeader, StatusBadge, Th, cx, inputCls, tdCls } from '../ui'
@@ -13,25 +14,49 @@ type Toast = (m: string) => void
 /* ---------------- IMPORTAR ---------------- */
 type Step = 'idle' | 'selected' | 'validating' | 'result' | 'importing' | 'done'
 
+const MATCH_LABELS = {
+  COINCIDENCIA_EXACTA_UNICA: 'Coincidencia exacta única',
+  DUDOSA_FECHA_DISTINTA: 'Dudosa: fecha de inicio distinta',
+  DUDOSA_VARIOS_CANDIDATOS: 'Dudosa: varios candidatos',
+  DUDOSA_REPETIDA_EN_ARCHIVO: 'Dudosa: repetida en el archivo',
+  NUEVA_PROPUESTA: 'Propuesta nueva frente a los registros consultados',
+} as const
+
 export function Importar({ nav, toast }: { nav: Nav; toast: Toast }) {
   const [step, setStep] = useState<Step>('idle')
   const [file, setFile] = useState<File | null>(null)
   const [result, setResult] = useState<ImportValidationResult | null>(null)
   const [importResult, setImportResult] = useState<ImportResult | null>(null)
+  const [comparison, setComparison] = useState<ImportComparisonResult | null>(null)
+  const [comparing, setComparing] = useState(false)
+  const [comparisonError, setComparisonError] = useState<string | null>(null)
   const [over, setOver] = useState(false)
   const [bad, setBad] = useState<string | null>(null)
   const [requestError, setRequestError] = useState<string | null>(null)
   const input = useRef<HTMLInputElement>(null)
   const importLock = useRef(false)
+  const comparisonGate = useRef(new ComparisonRequestGate())
 
   const pick = (selected?: File | null) => {
     if (!selected) return
-    if (!selected.name.toLowerCase().endsWith('.xlsx')) { setBad('Solo se permiten archivos .xlsx.'); return }
-    if (selected.size > 10 * 1024 * 1024) { setBad('El archivo supera el límite de 10 MB.'); return }
+    comparisonGate.current.invalidate()
+    setComparison(null)
+    setComparisonError(null)
+    setComparing(false)
+    if (!selected.name.toLowerCase().endsWith('.xlsx')) {
+      setFile(null); setResult(null); setImportResult(null); setStep('idle')
+      setBad('Solo se permiten archivos .xlsx.'); return
+    }
+    if (selected.size > 10 * 1024 * 1024) {
+      setFile(null); setResult(null); setImportResult(null); setStep('idle')
+      setBad('El archivo supera el límite de 10 MB.'); return
+    }
     setBad(null)
     setRequestError(null)
     setResult(null)
     setImportResult(null)
+    setComparison(null)
+    setComparisonError(null)
     setFile(selected)
     setStep('selected')
   }
@@ -66,12 +91,32 @@ export function Importar({ nav, toast }: { nav: Nav; toast: Toast }) {
       importLock.current = false
     }
   }
+  const compare = async () => {
+    if (!file || comparing) return
+    const requestGeneration = comparisonGate.current.begin()
+    const selectedFile = file
+    setComparison(null)
+    setComparing(true)
+    setComparisonError(null)
+    try {
+      const comparisonResult = await compareImportFile(selectedFile)
+      if (comparisonGate.current.isCurrent(requestGeneration)) setComparison(comparisonResult)
+    } catch (cause) {
+      if (comparisonGate.current.isCurrent(requestGeneration)) setComparisonError(cause instanceof Error ? cause.message : 'No fue posible comparar la nómina.')
+    } finally {
+      if (comparisonGate.current.isCurrent(requestGeneration)) setComparing(false)
+    }
+  }
   const reset = () => {
+    comparisonGate.current.invalidate()
+    setComparing(false)
     setStep('idle')
     setBad(null)
     setRequestError(null)
     setResult(null)
     setImportResult(null)
+    setComparison(null)
+    setComparisonError(null)
     setFile(null)
     if (input.current) input.current.value = ''
   }
@@ -138,10 +183,28 @@ export function Importar({ nav, toast }: { nav: Nav; toast: Toast }) {
           </div>
           {requestError && <p role="alert" className="mx-5 mt-4 rounded-lg bg-[#fbe7e5] px-4 py-3 text-sm text-[#a12a22]">{requestError}</p>}
           {result.errores.length > 0 && <div className="mx-5 mt-5 rounded-lg bg-[#fff5ec] px-4 py-3 text-sm text-[#7a3d0d"><p className="font-medium">Errores de validación</p><ul className="mt-2 space-y-1">{result.errores.map((error, index) => <li key={`${error.numeroFila}-${error.codigo}-${index}`}>Fila {error.numeroFila}{error.campo ? ` · ${error.campo}` : ''}: {error.mensaje}</li>)}</ul></div>}
+          <div className="mx-5 mt-5 rounded-lg border border-brand/20 bg-brand-soft/40 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div><p className="font-medium">Comparación de identidad (solo lectura)</p><p className="mt-1 text-xs text-muted">Compara con los registros actuales. No aplica ni guarda cambios.</p></div>
+              <Btn onClick={() => void compare()} disabled={comparing || step === 'importing'}>{comparing ? <><Loader2 className="size-4 animate-spin" />Comparando…</> : 'Comparar con garantías actuales'}</Btn>
+            </div>
+            {comparisonError && <p role="alert" className="mt-3 rounded-lg bg-[#fbe7e5] px-3 py-2 text-sm text-[#a12a22]">{comparisonError}</p>}
+          </div>
+          {comparison && <div className="mx-5 mt-4 overflow-hidden rounded-lg border border-line">
+            <div className="grid grid-cols-2 gap-3 border-b border-line bg-canvas p-4 sm:grid-cols-3">
+              <div><p className="text-xs text-muted">Filas leídas</p><p className="tnum text-xl font-semibold">{comparison.filasLeidas}</p></div>
+              <div><p className="text-xs text-muted">Válidas</p><p className="tnum text-xl font-semibold">{comparison.filasValidas}</p></div>
+              <div><p className="text-xs text-muted">Inválidas</p><p className="tnum text-xl font-semibold">{comparison.filasInvalidas}</p></div>
+              {Object.entries(MATCH_LABELS).map(([key, label]) => <div key={key}><p className="text-xs text-muted">{label}</p><p className="tnum text-xl font-semibold">{comparison.conteos[key as keyof typeof comparison.conteos]}</p></div>)}
+            </div>
+            {comparison.filas.length > 0 && <div className="max-h-96 overflow-auto"><table className="w-full text-sm"><thead className="sticky top-0 bg-white"><tr><Th>Fila</Th><Th>Clasificación de identidad</Th><Th>Candidatos</Th><Th>Diferencias en datos fuente</Th></tr></thead><tbody className="divide-y divide-line">
+              {comparison.filas.map((row) => <tr key={row.numeroFila}><td className={tdCls}>{row.numeroFila}</td><td className={tdCls}>{MATCH_LABELS[row.clasificacion]}</td><td className={tdCls}>{row.candidatosPosibles}</td><td className={tdCls}>{row.camposImportadosDiferentes.length ? row.camposImportadosDiferentes.map((field) => field === 'fechaLimite' ? 'Fecha límite' : 'Responsable informado').join(', ') : '—'}</td></tr>)}
+            </tbody></table></div>}
+            <p className="border-t border-line px-4 py-3 text-xs text-muted">Las diferencias de datos fuente no cambian la clasificación. Una coincidencia dudosa no se interpreta como corrección ni como caso nuevo. Las garantías ausentes en la nómina no se consideran cerradas ni eliminadas.</p>
+          </div>}
           <div className="overflow-x-auto p-5">
             <p className="mb-3 text-sm font-medium">Vista previa de filas válidas (máximo 10)</p>
-            {result.vistaPrevia.length ? <table className="w-full"><thead><tr><Th>RUT</Th><Th>Nombre</Th><Th>Problema de salud</Th><Th>Garantía</Th><Th>Fecha límite</Th></tr></thead>
-              <tbody className="divide-y divide-line">{result.vistaPrevia.map((row) => <tr key={row.numeroFila}><td className={cx(tdCls, 'font-mono text-[13px]')}>{row.rut}-{row.dv}</td><td className={tdCls}>{row.nombre}</td><td className={tdCls}>{row.problemaSalud}</td><td className={tdCls}>{row.nombreGarantia}</td><td className={cx(tdCls, 'tnum')}>{new Date(`${row.fechaLimite}T00:00:00`).toLocaleDateString('es-CL')}</td></tr>)}</tbody></table> : <p className="rounded-lg bg-canvas px-4 py-3 text-sm text-muted">No hay filas válidas para mostrar.</p>}
+            {result.vistaPrevia.length ? <p className="rounded-lg bg-canvas px-4 py-3 text-sm text-muted">Hay filas válidas en la planilla. La validación no muestra datos personales ni clínicos.</p> : <p className="rounded-lg bg-canvas px-4 py-3 text-sm text-muted">No hay filas válidas para mostrar.</p>}
           </div>
           <div className="mx-5 mb-5 rounded-lg border border-[#efdc9a] bg-[#fffbec] px-4 py-3 text-sm text-[#6b4f06]">
             <p className="font-medium">Al confirmar, el backend volverá a validar el archivo y guardará solo las filas válidas.</p>

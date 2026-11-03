@@ -35,6 +35,12 @@ interface GarantiaApi {
   estado: Status;
   responsable: string;
   gestionadaAt: string | null;
+  gestionadaPor: { id: string; nombre: string } | null;
+}
+
+export interface GestionGarantiaResult {
+  gestionadaAt: string;
+  gestionadaPor: { id: string; nombre: string } | null;
 }
 
 interface ListaApi {
@@ -75,6 +81,7 @@ function mapGarantia(item: GarantiaApi): Garantia {
     estado: item.estado,
     responsable: item.responsable,
     gestionadaAt: item.gestionadaAt,
+    gestionadaPor: item.gestionadaPor,
   };
 }
 
@@ -92,6 +99,11 @@ export async function getGarantias(filtros: GarantiasFiltros = {}, signal?: Abor
 export async function getGarantiaById(id: string | number, signal?: AbortSignal): Promise<Garantia> {
   const result = await apiRequest<DetalleApi>(`/api/garantias/${encodeURIComponent(String(id))}`, { signal });
   return mapGarantia(result.data);
+}
+
+export async function registrarGestionGarantia(id: string | number): Promise<GestionGarantiaResult> {
+  const result = await apiRequest<{ data: GestionGarantiaResult }>(`/api/garantias/${encodeURIComponent(String(id))}/gestion`, { method: 'POST' });
+  return result.data;
 }
 
 

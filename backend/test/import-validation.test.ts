@@ -37,7 +37,7 @@ describe("validación de libros XLSX", () => {
     const buffer = await makeWorkbook([validRow]);
     const result = await validateWorkbook(buffer, "Nomina.xlsx");
     expect(result).toMatchObject({ nombreArchivo: "Nomina.xlsx", filasLeidas: 1, filasValidas: 1, filasConErrores: 0 });
-    expect(result.vistaPrevia[0]).toMatchObject({ rut: "12.345.678", dv: "5", fechaInicio: "2026-10-01", fechaLimite: "2026-12-31" });
+    expect(result.vistaPrevia).toEqual([{ numeroFila: 2 }]);
     expect(result.errores).toEqual([]);
   });
 
@@ -48,7 +48,7 @@ describe("validación de libros XLSX", () => {
     reorderedRow[2] = excelSerial("2026-10-01");
     const result = await validateWorkbook(await makeWorkbook([reorderedRow], { headerRow: 11, headers: variedHeaders }), "Reporte.xlsx");
     expect(result).toMatchObject({ filasLeidas: 1, filasValidas: 1, filasConErrores: 0 });
-    expect(result.vistaPrevia[0]).toMatchObject({ numeroFila: 12, fechaInicio: "2026-10-01", fechaLimite: "2026-12-31" });
+    expect(result.vistaPrevia).toEqual([{ numeroFila: 12 }]);
     expect(result.errores).toEqual([]);
   });
   it("rechaza un archivo de cero bytes", async () => {

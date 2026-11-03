@@ -40,4 +40,13 @@ describe("navegación del frontend", () => {
     expect(dashboardSource).not.toContain("Nomina_06102026.xlsx");
     expect(dashboardSource).toContain("vencidas o con fecha l");
   });
+
+  it("invalida comparaciones anteriores y evita exponer campos de pacientes en la validación", () => {
+    expect(pagesSource).toContain("comparisonGate.current.begin()");
+    expect(pagesSource).toContain("comparisonGate.current.invalidate()");
+    expect(pagesSource).toContain("comparisonGate.current.isCurrent(requestGeneration)");
+    expect(pagesSource).toContain("setComparison(null)");
+    expect(pagesSource).not.toContain("row.rut}");
+    expect(pagesSource).not.toContain("row.nombre}");
+  });
 });

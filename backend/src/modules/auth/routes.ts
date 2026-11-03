@@ -85,12 +85,28 @@ export async function requireAuthenticated(request: FastifyRequest, reply: Fasti
 
 export function requireRoles(...roles: SafeUser["rol"][]) {
   return async (request: FastifyRequest, reply: FastifyReply) => {
-    const authResult = await requireAuthenticated(request, reply);
-    if (authResult) return authResult;
+    await requireAuthenticated(request, reply);
+    if (reply.sent) return;
     if (!request.authUser || !roles.includes(request.authUser.rol)) {
       return reply.code(403).send({ error: { code: "FORBIDDEN", message: "No tienes permisos para realizar esta acción.", details: [] }, requestId: request.id });
     }
   };
+}
+
+/**
+ * ADMIN puede cargar nóminas por perfil. Para el resto de perfiles operativos
+ * se exige el permiso persistido en Usuario; LECTOR nunca puede importar.
+ */
+export function canUploadNominations(user: Pick<SafeUser, "rol" | "puedeCargarNominas"> | null): boolean {
+  return Boolean(user && (user.rol === "ADMIN" || (user.rol !== "LECTOR" && user.puedeCargarNominas)));
+}
+
+export async function requireImportPermission(request: FastifyRequest, reply: FastifyReply) {
+  await requireAuthenticated(request, reply);
+  if (reply.sent) return;
+  if (!canUploadNominations(request.authUser)) {
+    return reply.code(403).send({ error: { code: "FORBIDDEN", message: "No tienes permiso para cargar nóminas.", details: [] }, requestId: request.id });
+  }
 }
 
 export async function authRoutes(app: FastifyInstance) {

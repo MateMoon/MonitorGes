@@ -2,6 +2,7 @@ import { EstadoImportacion, Prisma } from "@prisma/client";
 import { prisma } from "../../db/prisma.js";
 import { dateToCivil } from "../../utils/dates.js";
 import { parseWorkbookForImport, type PreviewRow, type ValidationError } from "./validation-service.js";
+import { normalizeIdentityRut as normalizeRut, normalizeIdentityText as normalizeText } from "./identity-normalization.js";
 
 export interface ImportFileResult {
   id: string;
@@ -14,17 +15,6 @@ export interface ImportFileResult {
   registrosSinCambios: number;
   registrosConError: number;
   errores: ValidationError[];
-}
-
-function normalizeText(value: string): string {
-  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().replace(/\s+/g, " ");
-}
-
-function normalizeRut(record: PreviewRow): { rutNumero: string; dv: string } {
-  const raw = record.rut.toUpperCase();
-  const clean = raw.replace(/[.\-\s]/g, "");
-  const combined = (raw.includes("-") || clean.length > 8) ? /^(\d{1,8})([0-9K])$/.exec(clean) : null;
-  return { rutNumero: combined?.[1] ?? clean.replace(/\D/g, ""), dv: record.dv.toUpperCase() || combined?.[2] || "" };
 }
 
 function civilDate(value: string): Date {
@@ -41,7 +31,7 @@ async function updateImportCounter(tx: Prisma.TransactionClient, id: string, fie
 
 async function processValidRow(importacionId: string, record: PreviewRow): Promise<"nuevo" | "actualizado" | "sinCambios" | "ambiguo"> {
   return prisma.$transaction(async (tx) => {
-    const { rutNumero, dv } = normalizeRut(record);
+    const { rutNumero, dv } = normalizeRut(record.rut, record.dv);
     const problemKey = normalizeText(record.problemaSalud);
     const guaranteeKey = normalizeText(record.nombreGarantia);
     const startDate = civilDate(record.fechaInicio);

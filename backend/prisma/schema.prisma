@@ -9,6 +9,7 @@ datasource db {
 
 enum RolUsuario {
   ADMIN
+  COORDINADOR_SOME
   PROFESIONAL
   LECTOR
 }
@@ -64,6 +65,7 @@ model Usuario {
   username       String        @unique
   email          String        @unique
   rol            RolUsuario    @default(LECTOR)
+  puedeCargarNominas Boolean    @default(false)
   activo         Boolean       @default(true)
   passwordHash   String?
   ultimoAccesoAt DateTime?
@@ -72,7 +74,86 @@ model Usuario {
   importaciones  Importacion[]
   garantias      Garantia[]    @relation("Gestionadas")
   sesiones       SesionUsuario[]
+  areasResponsabilidad AreaResponsabilidad[] @relation("AreaUsuario")
+  areasCreadas   AreaResponsabilidad[] @relation("AreaCreador")
+  areasActualizadas AreaResponsabilidad[] @relation("AreaActualizador")
 }
+
+model Establecimiento {
+  id              String   @id @default(uuid()) @db.Uuid
+  nombre          String   @unique
+  claveNormalizada String
+  activo          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  areas           AreaResponsabilidad[]
+
+  @@index([activo, nombre])
+  @@index([claveNormalizada])
+}
+
+model ProblemaSalud {
+  id              String   @id @default(uuid()) @db.Uuid
+  nombre          String   @unique
+  claveNormalizada String
+  activo          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  combinaciones   CombinacionProblemaGarantia[]
+
+  @@index([activo, nombre])
+  @@index([claveNormalizada])
+}
+
+model TipoGarantia {
+  id              String   @id @default(uuid()) @db.Uuid
+  nombre          String   @unique
+  claveNormalizada String
+  activo          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  combinaciones   CombinacionProblemaGarantia[]
+
+  @@index([activo, nombre])
+  @@index([claveNormalizada])
+}
+
+model CombinacionProblemaGarantia {
+  id             String       @id @default(uuid()) @db.Uuid
+  problemaSaludId String      @db.Uuid
+  tipoGarantiaId String       @db.Uuid
+  activa         Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  problemaSalud  ProblemaSalud @relation(fields: [problemaSaludId], references: [id], onDelete: Restrict)
+  tipoGarantia   TipoGarantia  @relation(fields: [tipoGarantiaId], references: [id], onDelete: Restrict)
+  areas          AreaResponsabilidad[]
+
+  @@unique([problemaSaludId, tipoGarantiaId], map: "CombinacionProblemaGarantia_pair_key")
+  @@index([activa])
+}
+
+model AreaResponsabilidad {
+  id              String                      @id @default(uuid()) @db.Uuid
+  usuarioId       String                      @db.Uuid
+  establecimientoId String                    @db.Uuid
+  combinacionId   String                      @db.Uuid
+  activa          Boolean                     @default(true)
+  createdAt       DateTime                    @default(now())
+  updatedAt       DateTime                    @updatedAt
+  creadorId       String?                     @db.Uuid
+  actualizadorId  String?                     @db.Uuid
+  usuario         Usuario                    @relation("AreaUsuario", fields: [usuarioId], references: [id], onDelete: Restrict)
+  establecimiento Establecimiento            @relation(fields: [establecimientoId], references: [id], onDelete: Restrict)
+  combinacion     CombinacionProblemaGarantia @relation(fields: [combinacionId], references: [id], onDelete: Restrict)
+  creador         Usuario?                   @relation("AreaCreador", fields: [creadorId], references: [id], onDelete: SetNull)
+  actualizador    Usuario?                   @relation("AreaActualizador", fields: [actualizadorId], references: [id], onDelete: SetNull)
+
+  @@unique([usuarioId, establecimientoId, combinacionId], map: "AreaResponsabilidad_coverage_key")
+  @@index([usuarioId, activa])
+  @@index([establecimientoId, combinacionId, activa], map: "AreaResponsabilidad_scope_idx")
+}
+
 
 model SesionUsuario {
   id          String   @id @default(uuid()) @db.Uuid

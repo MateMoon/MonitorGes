@@ -1,6 +1,6 @@
 ﻿import { apiRequest } from './api';
 
-export type AuthUser = { id: string; username: string; nombre: string; email: string; rol: 'ADMIN' | 'PROFESIONAL' | 'LECTOR' };
+export type AuthUser = { id: string; username: string; nombre: string; email: string; rol: 'ADMIN' | 'COORDINADOR_SOME' | 'PROFESIONAL' | 'LECTOR'; puedeCargarNominas: boolean };
 type AuthResponse = { data: { user: AuthUser; expiresAt: string } };
 
 export async function login(username: string, password: string) {

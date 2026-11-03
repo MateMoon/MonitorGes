@@ -6,7 +6,7 @@ vi.mock("../src/modules/auth/auth-service.js", () => mocks);
 import { buildApp } from "../src/app.js";
 import { resetLoginRateLimitForTests } from "../src/modules/auth/routes.js";
 
-const user = { id: "admin-id", username: "admin", nombre: "Admin QA", email: "admin@example.test", rol: "ADMIN" as const };
+const user = { id: "admin-id", username: "admin", nombre: "Admin QA", email: "admin@example.test", rol: "ADMIN" as const, puedeCargarNominas: false };
 
 describe("sesion de autenticacion", () => {
   const app = buildApp();

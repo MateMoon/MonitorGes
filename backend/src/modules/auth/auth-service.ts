@@ -14,7 +14,14 @@ function deriveKey(password: string, salt: Buffer, length: number, options: { N:
   });
 }
 
-export type SafeUser = { id: string; username: string; nombre: string; email: string; rol: "ADMIN" | "PROFESIONAL" | "LECTOR" };
+export type SafeUser = {
+  id: string;
+  username: string;
+  nombre: string;
+  email: string;
+  rol: "ADMIN" | "COORDINADOR_SOME" | "PROFESIONAL" | "LECTOR";
+  puedeCargarNominas: boolean;
+};
 
 export function hashSessionToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
@@ -40,13 +47,13 @@ export async function verifyPassword(password: string, encoded: string | null) {
 }
 
 export async function authenticateUser(username: string, password: string) {
-  const user = await prisma.usuario.findUnique({ where: { username: username.trim() }, select: { id: true, username: true, nombre: true, email: true, rol: true, activo: true, passwordHash: true } });
+  const user = await prisma.usuario.findUnique({ where: { username: username.trim() }, select: { id: true, username: true, nombre: true, email: true, rol: true, puedeCargarNominas: true, activo: true, passwordHash: true } });
   if (!user || !user.activo || !user.passwordHash) {
     await verifyPassword(password, DUMMY_PASSWORD_HASH);
     return null;
   }
   if (!(await verifyPassword(password, user.passwordHash))) return null;
-  return { id: user.id, username: user.username, nombre: user.nombre, email: user.email, rol: user.rol } satisfies SafeUser;
+  return { id: user.id, username: user.username, nombre: user.nombre, email: user.email, rol: user.rol, puedeCargarNominas: user.puedeCargarNominas } satisfies SafeUser;
 }
 
 export async function createSession(usuarioId: string) {
@@ -61,14 +68,14 @@ export async function createSession(usuarioId: string) {
 export async function getSessionUser(token: string): Promise<SafeUser | null> {
   const session = await prisma.sesionUsuario.findUnique({
     where: { tokenHash: hashSessionToken(token) },
-    select: { expiraAt: true, usuario: { select: { id: true, username: true, nombre: true, email: true, rol: true, activo: true } } },
+    select: { expiraAt: true, usuario: { select: { id: true, username: true, nombre: true, email: true, rol: true, puedeCargarNominas: true, activo: true } } },
   });
   if (!session || session.expiraAt.getTime() <= Date.now() || !session.usuario.activo) {
     if (session) await prisma.sesionUsuario.deleteMany({ where: { tokenHash: hashSessionToken(token) } });
     return null;
   }
-  const { id, username, nombre, email, rol } = session.usuario;
-  return { id, username, nombre, email, rol };
+  const { id, username, nombre, email, rol, puedeCargarNominas } = session.usuario;
+  return { id, username, nombre, email, rol, puedeCargarNominas };
 }
 
 export async function revokeSession(token: string) {

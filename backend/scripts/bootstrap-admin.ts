@@ -13,7 +13,7 @@ try {
   if (!username || !nombre || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error("Usuario, nombre y correo válidos son obligatorios.");
   prompt.close();
 
-  const password = await askHidden(stdin, stdout, "Contraseña nueva (mínimo 14 caracteres): ");
+  const password = await askHidden(stdin, stdout, "Contraseña nueva (mínimo 8 caracteres): ");
   const confirmation = await askHidden(stdin, stdout, "Repite la contraseña: ");
   validatePasswordConfirmation(password, confirmation);
   const passwordHash = await hashPassword(password);

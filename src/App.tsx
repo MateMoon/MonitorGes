@@ -16,7 +16,7 @@ const MENU: { id: Page; label: string; icon: typeof Bell; title: string }[] = [
   { id: 'alertas', label: 'Alertas', icon: Siren, title: 'Alertas' },
   // Estadísticas permanece temporalmente deshabilitada.
   // { id: 'estadisticas', label: 'Estadísticas', icon: BarChart3, title: 'Estadísticas' },
-  { id: 'configuracion', label: 'Configuración', icon: Settings, title: 'Configuración' },
+  { id: 'configuracion', label: 'Gestión de usuarios', icon: Settings, title: 'Gestión de usuarios' },
 ]
 
 export default function App() {

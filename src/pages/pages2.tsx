@@ -5,7 +5,7 @@ import { CONTEOS, GARANTIAS_DATA, RESPONSABLES } from '../data/mockData'
 import type { Nav } from './pages1'
 import { compareImportFile, getImportHistory, importFile, validateImportFile, type ImportComparisonResult, type ImportHistoryItem, type ImportPagination, type ImportResult, type ImportValidationResult } from '../services/importaciones'
 import { ComparisonRequestGate } from '../services/comparison-request-gate'
-import { getNotificationEmailConfig, saveNotificationEmails } from '../services/notificaciones'
+import { getNotificationEmailConfig } from '../services/notificaciones'
 import ConfiguracionUsuarios from './ConfiguracionUsuarios'
 import { Btn, Card, CardHeader, StatusBadge, Th, cx, inputCls, tdCls } from '../ui'
 
@@ -295,61 +295,29 @@ export function Historial() {
   )
 }
 /* ---------------- ALERTAS ---------------- */
-export function Alertas({ toast, canEditEmail }: { initialTab?: string; toast: Toast; canEditEmail: boolean }) {
-  const [emails, setEmails] = useState<string[]>([''])
-  const [savedEmails, setSavedEmails] = useState<string[]>([])
-  const [emailLoading, setEmailLoading] = useState(true)
-  const [emailSaving, setEmailSaving] = useState(false)
-  const [emailLoadError, setEmailLoadError] = useState<string | null>(null)
-  const [emailSaveError, setEmailSaveError] = useState<string | null>(null)
-  const [emailSavedMessage, setEmailSavedMessage] = useState<string | null>(null)
+export function Alertas(_props: { initialTab?: string; toast: Toast; canEditEmail: boolean }) {
+  const [emails, setEmails] = useState<string[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   useEffect(() => {
     const controller = new AbortController()
     getNotificationEmailConfig(controller.signal).then((config) => {
-      const configured = config.emails?.length ? config.emails : config.email ? [config.email] : []
-      setEmails(configured.length ? configured : [''])
-      setSavedEmails(configured)
-    }).catch((cause) => {
-      if (!controller.signal.aborted) {
-        setEmailLoadError(cause instanceof Error ? cause.message : 'No fue posible cargar la configuracion del correo.')
-      }
-    }).finally(() => { if (!controller.signal.aborted) setEmailLoading(false) })
+      if (!controller.signal.aborted) setEmails(config.emails)
+    }).catch(() => {
+      if (!controller.signal.aborted) setError('No fue posible consultar la lista histórica.')
+    }).finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => controller.abort()
   }, [])
-
-  const saveEmail = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault(); setEmailSaveError(null); setEmailSavedMessage(null)
-    const trimmed = emails.map((email) => email.trim())
-    if (trimmed.some((email) => !email)) {
-      setEmailSaveError('Agrega al menos un correo y elimina las filas vacias.')
-      return
-    }
-    if (trimmed.some((email) => email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) {
-      setEmailSaveError('Revisa las direcciones: cada correo debe tener un formato valido.')
-      return
-    }
-    const uniqueEmails = [...new Set(trimmed.map((email) => email.toLowerCase()))]
-    setEmailSaving(true)
-    try {
-      const saved = await saveNotificationEmails(uniqueEmails)
-      setEmails(saved.emails); setSavedEmails(saved.emails); setEmailSavedMessage('La lista de destinatarios se guardo correctamente.')
-      toast('Destinatarios de informes actualizados.')
-    } catch (cause) { setEmailSaveError(cause instanceof Error ? cause.message : 'No fue posible guardar los destinatarios. Intenta nuevamente.') }
-    finally { setEmailSaving(false) }
-  }
   return <div className="page-in space-y-5">
     <div><h2 className="text-2xl font-semibold">Sistema de alertas</h2></div>
-    <Card><CardHeader title="Configuracion de notificaciones por correo" sub="Destinatarios persistidos en PostgreSQL para el informe automatico diario" />
-      <form noValidate onSubmit={saveEmail} className="space-y-4 p-5"><fieldset disabled={!canEditEmail || emailLoading || emailSaving} className="space-y-3"><legend className="mb-2 text-sm font-medium">Correos destinatarios</legend>
-        {emails.map((email, index) => <div key={index} className="flex max-w-2xl items-center gap-2"><input aria-label={`Correo destinatario ${index + 1}`} type="email" maxLength={254} autoComplete="email" value={email} onChange={(event) => { setEmails((current) => current.map((value, itemIndex) => itemIndex === index ? event.target.value : value)); setEmailSaveError(null); setEmailSavedMessage(null) }} placeholder="equipo@institucion.cl" className={cx(inputCls, 'flex-1')} /><Btn aria-label={`Quitar correo ${index + 1}`} onClick={() => { setEmails((current) => current.filter((_, itemIndex) => itemIndex !== index)); setEmailSaveError(null) }} className="!px-3">Quitar</Btn></div>)}
-        <Btn onClick={() => setEmails((current) => [...current, ''])}>Agregar correo</Btn>
-      </fieldset><p className="text-xs text-muted">Los duplicados se eliminan sin distinguir mayusculas y minusculas. Puedes quitar todos los correos para pausar los envios. El informe no incluye nombre, RUT ni diagnostico de pacientes.</p>
-      {emailLoadError && <p role="alert" className="rounded-lg bg-[#fbe7e5] px-4 py-3 text-sm text-[#a12a22]">No fue posible cargar la configuracion: {emailLoadError}</p>}{emailLoading && <p role="status" className="flex items-center gap-2 text-sm text-muted"><Loader2 className="size-4 animate-spin" />Cargando destinatarios guardados...</p>}{!emailLoading && !emailLoadError && savedEmails.length === 0 && <p className="rounded-lg bg-[#fff8e8] px-4 py-3 text-sm text-[#75550a]">Aun no hay direcciones guardadas. El programador no enviara informes hasta que configures al menos una.</p>}
-      {!canEditEmail && <p className="text-xs text-muted">Solo administradores pueden modificar los destinatarios.</p>}{emailSaveError && <p role="alert" className="rounded-lg bg-[#fbe7e5] px-4 py-3 text-sm text-[#a12a22]">{emailSaveError}</p>}{emailSavedMessage && <p role="status" className="rounded-lg bg-[#e6f4ec] px-4 py-3 text-sm text-[#256b45]">{emailSavedMessage}</p>}<div className="flex justify-end"><Btn variant="primary" type="submit" disabled={!canEditEmail || emailLoading || emailSaving || Boolean(emailLoadError)}>{emailSaving ? 'Guardando...' : 'Guardar configuracion'}</Btn></div></form>
+    <p className="rounded-lg bg-brand-soft px-4 py-3 text-sm text-brand">Los informes individuales se configuran en Gestión de usuarios. La lista global anterior ya no controla los envíos y no se utiliza como alternativa.</p>
+    <Card><CardHeader title="Destinatarios globales anteriores" sub="Consulta histórica; esta lista no activa envíos" />
+      <div className="space-y-2 p-5">{loading ? <p role="status" className="text-sm text-muted">Cargando lista histórica…</p> : error ? <p role="alert" className="rounded-lg bg-[#fbe7e5] px-4 py-3 text-sm text-[#a12a22]">{error}</p> : emails.length ? <ul className="space-y-2 text-sm">{emails.map((email) => <li key={email}>{email}</li>)}</ul> : <p className="text-sm text-muted">No hay destinatarios históricos guardados.</p>}</div>
     </Card>
-    <p className="rounded-lg bg-canvas px-4 py-3 text-sm text-muted">La bandeja de notificaciones y el monitoreo automatico estan temporalmente deshabilitados.</p>
+    <p className="rounded-lg bg-canvas px-4 py-3 text-sm text-muted">La recepción y los tipos se administran por usuario; la lista global se conserva para consulta.</p>
   </div>
-}/* ---------------- ESTADÍSTICAS ---------------- */
+}
+/* ---------------- ESTADÍSTICAS ---------------- */
 function Donut() {
   const total = STATUS_ORDER.reduce((a, s) => a + CONTEOS[s], 0)
   let acc = 0

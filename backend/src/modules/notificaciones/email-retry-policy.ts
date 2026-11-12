@@ -11,6 +11,9 @@ const TRANSIENT_NETWORK_CODES = new Set([
   "ESOCKET",
   "ETIMEDOUT",
   "EAI_AGAIN",
+  // Nodemailer usa EDNS para fallos de resolución previos a la conexión SMTP.
+  // Pueden deberse a restricciones de red o DNS temporal, sin mensaje aceptado.
+  "EDNS",
 ]);
 
 export interface EmailFailureCode {

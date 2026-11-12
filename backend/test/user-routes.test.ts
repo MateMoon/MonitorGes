@@ -1,140 +1,312 @@
-import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
+import Fastify from "fastify"
 
-const mocks = vi.hoisted(() => ({ create: vi.fn(), findUnique: vi.fn(), count: vi.fn(), update: vi.fn(), deleteMany: vi.fn(), hashPassword: vi.fn() }));
-vi.mock("../src/db/prisma.js", () => ({ prisma: { usuario: { create: mocks.create, findUnique: mocks.findUnique, count: mocks.count, update: mocks.update }, sesionUsuario: { deleteMany: mocks.deleteMany }, $transaction: vi.fn() } }));
-vi.mock("../src/modules/auth/auth-service.js", () => ({ hashPassword: mocks.hashPassword }));
-vi.mock("../src/modules/auth/routes.js", () => ({ requireRoles: () => async () => undefined }));
+const mocks = vi.hoisted(() => ({
+  listUsers: vi.fn(),
+  getUser: vi.fn(),
+  listGuaranteeTypes: vi.fn(),
+  createManagedUser: vi.fn(),
+  updateManagedUser: vi.fn(),
+  changePassword: vi.fn(),
+  hashPassword: vi.fn(),
+  getSessionUser: vi.fn(),
+}))
+vi.mock("../src/modules/auth/auth-service.js", () => ({
+  hashPassword: mocks.hashPassword,
+  getSessionUser: mocks.getSessionUser,
+}))
+vi.mock("../src/modules/usuarios/repository.js", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  ...Object.fromEntries(
+    [
+      "listUsers",
+      "getUser",
+      "listGuaranteeTypes",
+      "createManagedUser",
+      "updateManagedUser",
+      "changePassword",
+    ].map((name) => [name, mocks[(name as keyof typeof mocks)]]),
+  ),
+}))
+import { userRoutes } from "../src/modules/usuarios/routes.js"
+import { UserManagementError } from "../src/modules/usuarios/repository.js"
 
-import Fastify from "fastify";
-import { userRoutes } from "../src/modules/usuarios/routes.js";
+const user = {
+  id: "user-id",
+  nombre: "María Pérez",
+  nombres: "María",
+  apellido: "Pérez",
+  username: "maria.perez",
+  email: "maria@example.test",
+  rol: "PROFESIONAL",
+  activo: true,
+  puedeCargarNominas: true,
+  recibirInformeAutomatico: false,
+  tiposGarantia: [],
+}
+const input = {
+  nombre: "María Pérez",
+  nombres: "María",
+  apellido: "Pérez",
+  username: "maria.perez",
+  email: "maria@example.test",
+  rol: "PROFESIONAL",
+  password: "a-long-test-password",
+  tiposGarantia: ["tratamiento", "consulta", "tratamiento"],
+}
+const headers = { cookie: "ges_session=test" }
 
-describe("POST /api/usuarios", () => {
-  const app = Fastify();
-  app.register(userRoutes, { prefix: "/api/usuarios" });
+describe("administración de usuarios con autorización real", () => {
+  const app = Fastify()
+  app.decorateRequest("authUser", null)
+  app.register(userRoutes, { prefix: "/api/usuarios" })
   beforeEach(() => {
-    mocks.create.mockReset();
-    mocks.findUnique.mockReset();
-    mocks.count.mockReset();
-    mocks.update.mockReset();
-    mocks.deleteMany.mockReset();
-    mocks.hashPassword.mockReset().mockResolvedValue("scrypt$hash-for-test");
-    mocks.create.mockResolvedValue({
-      id: "user-id",
-      nombre: "Usuario QA",
-      username: "usuario.qa",
-      email: "usuario@example.test",
-      rol: "LECTOR",
-      puedeCargarNominas: false,
+    vi.resetAllMocks()
+    mocks.getSessionUser.mockResolvedValue({ ...user, rol: "ADMIN" })
+    mocks.hashPassword.mockResolvedValue("scrypt$test-hash")
+    mocks.createManagedUser.mockResolvedValue(user)
+    mocks.updateManagedUser.mockResolvedValue(user)
+    mocks.getUser.mockResolvedValue(user)
+    mocks.listUsers.mockResolvedValue({
+      data: [user],
+      resumen: { total: 1, activos: 1, informesHabilitados: 0 },
+    })
+    mocks.listGuaranteeTypes.mockResolvedValue([
+      { claveNormalizada: "tratamiento", nombre: "Tratamiento" },
+    ])
+  })
+  afterAll(() => app.close())
+
+  it("ADMIN crea, guarda nombre y apellido y aplica las preferencias por defecto", async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/usuarios",
+      headers,
+      payload: input,
+    })
+    expect(response.statusCode).toBe(201)
+    expect(mocks.hashPassword).toHaveBeenCalledWith(input.password)
+    expect(mocks.createManagedUser).toHaveBeenCalledWith(
+      expect.objectContaining({
+        nombres: "María",
+        apellido: "Pérez",
+        activo: true,
+        recibirInformeAutomatico: false,
+        tiposGarantia: ["tratamiento", "consulta"],
+      }),
+      "scrypt$test-hash",
+    )
+    expect(response.json().data).toMatchObject({
+      nombre: "María Pérez",
+      apellido: "Pérez",
+    })
+    expect(response.body).not.toContain(input.password)
+    expect(response.body).not.toContain("passwordHash")
+  })
+
+  it.each(["POST", "PUT"] as const)(
+    "%s acepta contraseñas de 8 caracteres y rechaza las de 7",
+    async (method) => {
+      const url = method === "POST"
+        ? "/api/usuarios"
+        : "/api/usuarios/user-id/contrasena"
+      const payload = (password: string) => method === "POST"
+        ? { ...input, password }
+        : { password }
+      const rejected = await app.inject({
+        method, url, headers, payload: payload("testpas"),
+      })
+      expect(rejected.statusCode).toBe(400)
+      expect(mocks.hashPassword).not.toHaveBeenCalled()
+      expect(mocks.createManagedUser).not.toHaveBeenCalled()
+      expect(mocks.changePassword).not.toHaveBeenCalled()
+
+      const accepted = await app.inject({
+        method, url, headers, payload: payload("testpass"),
+      })
+      expect(accepted.statusCode).toBe(method === "POST" ? 201 : 204)
+      expect(mocks.hashPassword).toHaveBeenCalledWith("testpass")
+    },
+  )
+
+  it.each(["LECTOR", "PROFESIONAL", "COORDINADOR_SOME", null])(
+    "rechaza todas las operaciones para %s",
+    async (role) => {
+      mocks.getSessionUser.mockResolvedValue(
+        role ? { ...user, rol: role } : null,
+      )
+      for (const [method, url, payload] of [
+        ["GET", "/api/usuarios", undefined],
+        ["GET", "/api/usuarios/tipos-garantia", undefined],
+        ["GET", "/api/usuarios/user-id", undefined],
+        ["POST", "/api/usuarios", input],
+        [
+          "PUT",
+          "/api/usuarios/user-id",
+          {
+            nombre: user.nombre,
+            email: user.email,
+            rol: "LECTOR",
+            activo: true,
+          },
+        ],
+        [
+          "PUT",
+          "/api/usuarios/user-id/contrasena",
+          { password: input.password },
+        ],
+      ] as const) {
+        const response = await app.inject({ method, url, headers, payload })
+        expect(response.statusCode).toBe(role ? 403 : 401)
+      }
+      expect(mocks.createManagedUser).not.toHaveBeenCalled()
+      expect(mocks.updateManagedUser).not.toHaveBeenCalled()
+      expect(mocks.changePassword).not.toHaveBeenCalled()
+      expect(mocks.listGuaranteeTypes).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each([
+    { apellido: "" },
+    { apellido: undefined },
+    { email: "incorrecto" },
+    { username: "no espacios" },
+    { password: "corta" },
+    { rol: "SUPERADMIN" },
+    { rol: "LECTOR", puedeCargarNominas: true },
+  ])("valida campos y restricciones existentes: %j", async (patch) => {
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/usuarios",
+      headers,
+      payload: { ...input, ...patch },
+    })
+    expect(response.statusCode).toBe(400)
+    expect(response.json().error.details.length).toBeGreaterThan(0)
+    expect(mocks.createManagedUser).not.toHaveBeenCalled()
+  })
+
+  it("conserva el contrato de listado y agrega resumen y opciones reales", async () => {
+    const list = await app.inject({
+      method: "GET",
+      url: "/api/usuarios",
+      headers,
+    })
+    expect(list.json()).toEqual({
+      data: [user],
+      resumen: { total: 1, activos: 1, informesHabilitados: 0 },
+    })
+    const options = await app.inject({
+      method: "GET",
+      url: "/api/usuarios/tipos-garantia",
+      headers,
+    })
+    expect(options.json().data[0].nombre).toBe("Tratamiento")
+  })
+
+  it("acepta actualizaciones de clientes anteriores sin borrar preferencias", async () => {
+    const body = {
+      nombre: user.nombre,
+      email: user.email,
+      rol: "PROFESIONAL",
       activo: true,
-      ultimoAccesoAt: null,
-      createdAt: new Date("2026-01-01T00:00:00.000Z"),
-    });
-  });
-  afterAll(async () => { await app.close(); });
-
-  it("persists only the password hash and returns the created safe user", async () => {
+    }
     const response = await app.inject({
-      method: "POST",
-      url: "/api/usuarios",
-      payload: {
-        nombre: "Usuario QA",
-        username: "usuario.qa",
-        email: "usuario@example.test",
-        rol: "LECTOR",
-        puedeCargarNominas: false,
-        password: "a-long-test-password",
-      },
-    });
+      method: "PUT",
+      url: "/api/usuarios/user-id",
+      headers,
+      payload: body,
+    })
+    expect(response.statusCode).toBe(200)
+    expect(mocks.updateManagedUser).toHaveBeenCalledWith("user-id", body)
+  })
 
-    expect(response.statusCode).toBe(201);
-    expect(mocks.hashPassword).toHaveBeenCalledWith("a-long-test-password");
-    const createArgs = mocks.create.mock.calls[0][0];
-    expect(createArgs.data).toEqual({
-      nombre: "Usuario QA",
-      username: "usuario.qa",
-      email: "usuario@example.test",
-      rol: "LECTOR",
-      puedeCargarNominas: false,
-      passwordHash: "scrypt$hash-for-test",
-    });
-    expect(createArgs.data).not.toHaveProperty("password");
-    expect(response.json().data).not.toHaveProperty("password");
-    expect(response.json().data).not.toHaveProperty("passwordHash");
-  });
-
-  it("maps duplicate usernames or emails to 409", async () => {
-    mocks.create.mockRejectedValueOnce({ code: "P2002" });
+  it("no permite cambiar silenciosamente el username en una edición", async () => {
     const response = await app.inject({
-      method: "POST",
-      url: "/api/usuarios",
+      method: "PUT",
+      url: "/api/usuarios/user-id",
+      headers,
       payload: {
-        nombre: "Usuario QA",
-        username: "usuario.qa",
-        email: "usuario@example.test",
-        rol: "LECTOR",
-        puedeCargarNominas: false,
-        password: "a-long-test-password",
+        nombre: user.nombre,
+        email: user.email,
+        rol: "PROFESIONAL",
+        activo: true,
+        username: "otro",
       },
-    });
+    })
+    expect(response.statusCode).toBe(400)
+  })
 
-    expect(response.statusCode).toBe(409);
-    expect(response.json().error.code).toBe("USER_ALREADY_EXISTS");
-  });
+  it.each(["POST", "PUT"] as const)(
+    "traduce duplicados de %s a 409",
+    async (method) => {
+      ;(method === "POST"
+        ? mocks.createManagedUser
+        : mocks.updateManagedUser
+      ).mockRejectedValueOnce({ code: "P2002" })
+      const response = await app.inject({
+        method,
+        url: method === "POST" ? "/api/usuarios" : "/api/usuarios/user-id",
+        headers,
+        payload:
+          method === "POST"
+            ? input
+            : {
+                nombre: user.nombre,
+                email: user.email,
+                rol: "PROFESIONAL",
+                activo: true,
+              },
+      })
+      expect(response.statusCode).toBe(409)
+      expect(response.json().error.code).toBe("USER_ALREADY_EXISTS")
+    },
+  )
 
-  it("persists the coordinator profile and explicit payroll permission", async () => {
-    const response = await app.inject({ method: "POST", url: "/api/usuarios", payload: {
-      nombre: "Coordinador Ficticio", username: "coord.ficticio", email: "coord@example.test",
-      rol: "COORDINADOR_SOME", puedeCargarNominas: true, password: "another-long-test-password",
-    } });
-    expect(response.statusCode).toBe(201);
-    expect(mocks.create.mock.calls[0][0].data).toMatchObject({ rol: "COORDINADOR_SOME", puedeCargarNominas: true });
-    expect(response.json().data).not.toHaveProperty("passwordHash");
-  });
+  it("presenta el bloqueo del último administrador y los tipos inválidos", async () => {
+    for (const [code, status] of [
+      ["LAST_ADMIN", 409],
+      ["INVALID_GUARANTEE_TYPE", 400],
+    ] as const) {
+      mocks.updateManagedUser.mockRejectedValueOnce(
+        new UserManagementError(code, "Revisa los datos.", status),
+      )
+      const result = await app.inject({
+        method: "PUT",
+        url: "/api/usuarios/user-id",
+        headers,
+        payload: {
+          nombre: user.nombre,
+          email: user.email,
+          rol: "PROFESIONAL",
+          activo: true,
+        },
+      })
+      expect(result.statusCode).toBe(status)
+      expect(result.json().error.code).toBe(code)
+    }
+  })
 
-  it("persists an edited profile and payroll permission", async () => {
-    mocks.findUnique.mockResolvedValue({ id: "user-id", rol: "PROFESIONAL", activo: true, puedeCargarNominas: false });
-    mocks.update.mockResolvedValue({ id: "user-id", nombre: "Profesional Ficticio", email: "professional@example.test", rol: "PROFESIONAL", puedeCargarNominas: true, activo: true });
-    const response = await app.inject({ method: "PUT", url: "/api/usuarios/user-id", payload: {
-      nombre: "Profesional Ficticio", email: "professional@example.test", rol: "PROFESIONAL", activo: true, puedeCargarNominas: true,
-    } });
-    expect(response.statusCode).toBe(200);
-    expect(mocks.update.mock.calls[0][0].data).toMatchObject({ rol: "PROFESIONAL", puedeCargarNominas: true });
-    expect(response.json().data.puedeCargarNominas).toBe(true);
-  });
-
-  it("rejects a payroll permission for LECTOR", async () => {
-    const response = await app.inject({ method: "POST", url: "/api/usuarios", payload: {
-      nombre: "Lector Ficticio", username: "lector.ficticio", email: "lector@example.test",
-      rol: "LECTOR", puedeCargarNominas: true, password: "another-long-test-password",
-    } });
-    expect(response.statusCode).toBe(400);
-    expect(mocks.create).not.toHaveBeenCalled();
-  });
-
-  it("prevents deactivating or demoting the last active administrator", async () => {
-    mocks.findUnique.mockResolvedValue({ id: "last-admin", rol: "ADMIN", activo: true, puedeCargarNominas: false });
-    mocks.count.mockResolvedValue(1);
-    const response = await app.inject({ method: "PUT", url: "/api/usuarios/last-admin", payload: {
-      nombre: "Admin Ficticio", email: "admin@example.test", rol: "COORDINADOR_SOME", activo: true,
-    } });
-    expect(response.statusCode).toBe(409);
-    expect(response.json().error.code).toBe("LAST_ADMIN");
-    expect(mocks.update).not.toHaveBeenCalled();
-  });
-
-  it("revokes sessions after deactivation and password changes", async () => {
-    mocks.findUnique.mockResolvedValue({ id: "user-id", rol: "PROFESIONAL", activo: true, puedeCargarNominas: true });
-    mocks.update.mockResolvedValue({ id: "user-id", rol: "PROFESIONAL", activo: false, puedeCargarNominas: true });
-    mocks.deleteMany.mockResolvedValue({ count: 1 });
-    const deactivated = await app.inject({ method: "PUT", url: "/api/usuarios/user-id", payload: {
-      nombre: "Usuario Ficticio", email: "user@example.test", rol: "PROFESIONAL", activo: false, puedeCargarNominas: true,
-    } });
-    expect(deactivated.statusCode).toBe(200);
-    expect(mocks.deleteMany).toHaveBeenCalledWith({ where: { usuarioId: "user-id" } });
-
-    mocks.findUnique.mockResolvedValueOnce({ id: "user-id" });
-    const password = await app.inject({ method: "PUT", url: "/api/usuarios/user-id/contrasena", payload: { password: "new-long-test-password" } });
-    expect(password.statusCode).toBe(204);
-    expect(mocks.deleteMany).toHaveBeenLastCalledWith({ where: { usuarioId: "user-id" } });
-  });
-});
+  it("restablece contraseñas por la ruta existente y no agrega DELETE", async () => {
+    const result = await app.inject({
+      method: "PUT",
+      url: "/api/usuarios/user-id/contrasena",
+      headers,
+      payload: { password: input.password },
+    })
+    expect(result.statusCode).toBe(204)
+    expect(mocks.changePassword).toHaveBeenCalledWith(
+      "user-id",
+      "scrypt$test-hash",
+    )
+    expect(
+      (
+        await app.inject({
+          method: "DELETE",
+          url: "/api/usuarios/user-id",
+          headers,
+        })
+      ).statusCode,
+    ).toBe(404)
+  })
+})

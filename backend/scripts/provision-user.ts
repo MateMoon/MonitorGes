@@ -31,9 +31,9 @@ try {
   const role = (await prompt.question("Rol (PROFESIONAL o LECTOR): ")).trim().toUpperCase();
   if (!username || !nombre || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !["PROFESIONAL", "LECTOR"].includes(role)) throw new Error("Datos inválidos. Este comando no crea administradores.");
   prompt.close();
-  const password = await askHidden("Contraseña inicial (mínimo 14 caracteres): ");
+  const password = await askHidden("Contraseña inicial (mínimo 8 caracteres): ");
   const confirmation = await askHidden("Repite la contraseña: ");
-  if (password.length < 14 || password !== confirmation) throw new Error("La contraseña debe tener al menos 14 caracteres y coincidir con la confirmación.");
+  if (password.length < 8 || password !== confirmation) throw new Error("La contraseña debe tener al menos 8 caracteres y coincidir con la confirmación.");
   const passwordHash = await hashPassword(password);
 
   await prisma.$transaction(async (tx) => {

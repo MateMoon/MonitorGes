@@ -53,7 +53,7 @@ export function askHidden(input: Input, output: Output, label: string): Promise<
 }
 
 export function validatePasswordConfirmation(password: string, confirmation: string) {
-  if (Array.from(password).length < 14 || password !== confirmation) {
-    throw new Error("La contraseña debe tener al menos 14 caracteres y coincidir con la confirmación.");
+  if (Array.from(password).length < 8 || password !== confirmation) {
+    throw new Error("La contraseña debe tener al menos 8 caracteres y coincidir con la confirmación.");
   }
 }

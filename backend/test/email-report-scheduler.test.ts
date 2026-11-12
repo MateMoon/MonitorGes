@@ -1,183 +1,70 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { startEmailReportScheduler } from "../src/modules/notificaciones/email-report-scheduler.js";
-import type { ReportDeliveryStore } from "../src/modules/notificaciones/report-service.js";
-
 const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
-const row = { id: "qa-row", nombreGarantia: "Garantía QA", rut: "12345678-5", fechaLimite: "2026-10-14", responsable: "Equipo QA" };
+afterEach(() => { vi.useRealTimers(); vi.clearAllMocks(); });
+async function settle() { await vi.advanceTimersByTimeAsync(0); }
 
-function storeFake(initial: Array<[string, "processing" | "failed" | "sent"]> = []): ReportDeliveryStore {
-  const statuses = new Map<string, "processing" | "failed" | "sent">(initial);
-  return {
-    async hasReservation(date) { return statuses.has(date); },
-    async claim(date) {
-      const status = statuses.get(date);
-      if (status === "processing") return "deferred";
-      if (status === "sent") return "already_sent";
-      statuses.set(date, "processing");
-      return "claimed";
-    },
-    async sent(date) { statuses.set(date, "sent"); },
-    async failed(date) { statuses.set(date, "failed"); },
-  };
-}
-
-async function settle() {
-  await Promise.resolve();
-  await Promise.resolve();
-  await vi.advanceTimersByTimeAsync(0);
-}
-
-afterEach(() => {
-  vi.useRealTimers();
-  vi.clearAllMocks();
-});
-
-describe("scheduler de informes", () => {
-  it("espera la hora programada en America/Santiago", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-10-13T10:00:00Z")); // 07:00 en Santiago
-    const send = vi.fn().mockResolvedValue({ messageId: "test-id" });
-    const scheduler = startEmailReportScheduler(logger, {
-      config: { enabled: true, time: "08:00" },
-      mailer: { send }, store: storeFake(), findRows: async () => [row], getRecipients: async () => ["qa@example.test", "second@example.test"],
-    });
-    await settle();
-    expect(send).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(60 * 60_000);
-    await settle();
-    expect(send).toHaveBeenCalledTimes(1);
-    expect(send.mock.calls[0][0].to).toEqual(["qa@example.test", "second@example.test"]);
+describe("programador exclusivamente individual", () => {
+  it("apagado no consulta usuarios ni crea transportes", async () => {
+    const run = vi.fn();
+    const scheduler = startEmailReportScheduler(logger, { config: { enabled: false, time: "08:00", dedupEnabled: true }, run });
+    expect(run).not.toHaveBeenCalled();
     await scheduler.stop();
   });
-
-  it("no inicia un informe nuevo al arrancar tarde y procesa el siguiente día local", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-10-13T12:00:00Z")); // 09:00 en Santiago
-    const send = vi.fn().mockResolvedValue({ messageId: "test-id" });
-    const store = storeFake();
-    const scheduler = startEmailReportScheduler(logger, {
-      config: { enabled: true, time: "08:00" },
-      mailer: { send }, store, findRows: async () => [row], getRecipients: async () => ["qa@example.test", "second@example.test"],
-      checkIntervalMs: 30_000,
-    });
-    await settle();
-    expect(send).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(30_000);
-    await settle();
-    expect(send).not.toHaveBeenCalled();
-    vi.setSystemTime(new Date("2026-10-14T12:00:00Z"));
-    await vi.advanceTimersByTimeAsync(30_000);
-    await settle();
-    expect(send).toHaveBeenCalledTimes(1);
-    expect(send.mock.calls.map(([message]) => message.subject)).toEqual([
-      expect.stringContaining("2026-10-14"),
-    ]);
-    expect(logger.warn).toHaveBeenCalledWith(expect.objectContaining({ reason: "late_start_without_daily_reservation" }), expect.any(String));
+  it("espera la hora de Santiago y permite reservas nuevas por usuario", async () => {
+    vi.useFakeTimers(); vi.setSystemTime(new Date("2026-11-05T10:59:00Z"));
+    const run = vi.fn().mockResolvedValue({ aceptadosSmtp: 2 });
+    const scheduler = startEmailReportScheduler(logger, { config: { enabled: true, time: "08:00", dedupEnabled: true }, run });
+    await settle(); expect(run).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(run).toHaveBeenCalledWith("2026-11-05", true, "diario");
     await scheduler.stop();
   });
-
-  it("al arrancar tarde solo recupera un envío diario que ya tenía una reserva", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-10-13T12:00:00Z")); // 09:00 en Santiago
-    const send = vi.fn().mockResolvedValue({ messageId: "retry-id" });
-    const scheduler = startEmailReportScheduler(logger, {
-      config: { enabled: true, time: "08:00" },
-      mailer: { send },
-      store: storeFake([["2026-10-13", "failed"]]),
-      findRows: async () => [row],
-      getRecipients: async () => ["qa@example.test", "second@example.test"],
-    });
-    await settle();
-    expect(send).toHaveBeenCalledTimes(1);
+  it("un arranque tardío solo recupera reservas individuales existentes", async () => {
+    vi.useFakeTimers(); vi.setSystemTime(new Date("2026-11-05T12:00:00Z"));
+    const run = vi.fn().mockResolvedValue({});
+    const scheduler = startEmailReportScheduler(logger, { config: { enabled: true, time: "08:00", dedupEnabled: true }, run });
+    await settle(); expect(run).toHaveBeenCalledWith("2026-11-05", false, "diario");
+    vi.setSystemTime(new Date("2026-11-06T11:00:00Z")); await vi.advanceTimersByTimeAsync(30000);
+    expect(run).toHaveBeenLastCalledWith("2026-11-06", true, "diario");
     await scheduler.stop();
   });
-
-  it("al reiniciar el mismo día no duplica un informe ya aceptado", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-10-13T10:00:00Z")); // 07:00 en Santiago
-    const store = storeFake();
-    const send = vi.fn().mockResolvedValue({ messageId: "restart-id" });
-    const dependencies = {
-      config: { enabled: true, time: "08:00" },
-      mailer: { send }, store, findRows: async () => [row], getRecipients: async () => ["qa@example.test", "second@example.test"],
-    };
-    const firstRun = startEmailReportScheduler(logger, dependencies);
-    await vi.advanceTimersByTimeAsync(60 * 60_000);
-    await settle();
-    expect(send).toHaveBeenCalledTimes(1);
-    await firstRun.stop();
-
-    vi.setSystemTime(new Date("2026-10-13T12:05:00Z")); // 09:05 en Santiago
-    const restarted = startEmailReportScheduler(logger, dependencies);
-    await settle();
-    expect(send).toHaveBeenCalledTimes(1);
-    await restarted.stop();
-  });
-
-  it("reintenta errores SMTP transitorios después del intervalo", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-10-13T10:00:00Z")); // 07:00 en Santiago
-    const send = vi.fn()
-      .mockRejectedValueOnce(Object.assign(new Error("network"), { code: "ETIMEDOUT", operation: "send" }))
-      .mockResolvedValue({ messageId: "test-id" });
-    const scheduler = startEmailReportScheduler(logger, {
-      config: { enabled: true, time: "08:00" }, retryIntervalMs: 300_000,
-      mailer: { send }, store: storeFake(), findRows: async () => [row], getRecipients: async () => ["qa@example.test", "second@example.test"],
-    });
-    await settle();
-    expect(send).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(60 * 60_000);
-    await settle();
-    expect(send).toHaveBeenCalledTimes(1);
-    await vi.advanceTimersByTimeAsync(300_000);
-    await settle();
-    expect(send).toHaveBeenCalledTimes(2);
+  it("un fallo permite volver a consultar, sin marcar todo el día como completo", async () => {
+    vi.useFakeTimers(); vi.setSystemTime(new Date("2026-11-05T11:00:00Z"));
+    const run = vi.fn().mockRejectedValueOnce(new Error("fallo de consulta")).mockResolvedValue({});
+    const scheduler = startEmailReportScheduler(logger, { config: { enabled: true, time: "08:00", dedupEnabled: true }, run });
+    await settle(); await vi.advanceTimersByTimeAsync(300000);
+    expect(run).toHaveBeenCalledTimes(2); expect(logger.error).toHaveBeenCalledTimes(1);
     await scheduler.stop();
   });
-
-  it("no envía sin destinatario y espera nuevos datos; el cierre espera trabajo activo", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-10-13T10:00:00Z")); // 07:00 en Santiago
-    let recipient: string | null = null;
-    let release!: () => void;
-    const pending = new Promise<void>((resolve) => { release = resolve; });
-    const send = vi.fn(async () => { await pending; return { messageId: "test-id" }; });
-    const scheduler = startEmailReportScheduler(logger, {
-      config: { enabled: true, time: "08:00" }, retryIntervalMs: 300_000,
-      mailer: { send }, store: storeFake(), findRows: async () => [row], getRecipients: async () => recipient ? [recipient] : [],
-    });
-    await settle();
-    expect(send).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(60 * 60_000);
-    await settle();
-    expect(send).not.toHaveBeenCalled();
-    recipient = "qa@example.test";
-    await vi.advanceTimersByTimeAsync(300_000);
-    await settle();
-    expect(send).toHaveBeenCalledTimes(1);
+  it("evita solapamientos y espera el trabajo activo al detenerse", async () => {
+    vi.useFakeTimers(); vi.setSystemTime(new Date("2026-11-05T11:00:00Z"));
+    let finish!: () => void;
+    const run = vi.fn(() => new Promise<void>((resolve) => { finish = resolve; }));
+    const scheduler = startEmailReportScheduler(logger, { config: { enabled: true, time: "08:00", dedupEnabled: true }, run });
+    await vi.advanceTimersByTimeAsync(600000); expect(run).toHaveBeenCalledTimes(1);
     let stopped = false;
     const stopping = scheduler.stop().then(() => { stopped = true; });
-    await settle();
-    expect(stopped).toBe(false);
-    release();
-    await stopping;
-    expect(stopped).toBe(true);
+    await Promise.resolve(); expect(stopped).toBe(false); finish(); await stopping; expect(stopped).toBe(true);
   });
-
-  it("evita ejecuciones concurrentes dentro del proceso", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-10-13T10:00:00Z")); // 07:00 en Santiago
-    let release!: () => void;
-    const pending = new Promise<void>((resolve) => { release = resolve; });
-    const findRows = vi.fn(async () => { await pending; return [row]; });
-    const scheduler = startEmailReportScheduler(logger, {
-      config: { enabled: true, time: "08:00" }, checkIntervalMs: 100,
-      mailer: { send: vi.fn().mockResolvedValue({}) }, store: storeFake(), findRows, getRecipients: async () => ["qa@example.test", "second@example.test"],
-    });
-    await vi.advanceTimersByTimeAsync(60 * 60_000 + 500);
-    expect(findRows).toHaveBeenCalledTimes(1);
-    const stopping = scheduler.stop();
-    release();
-    await stopping;
+  it("sin deduplicación mantiene la clave del horario entre sondeos y reinicios", async () => {
+    vi.useFakeTimers(); vi.setSystemTime(new Date("2026-11-05T12:59:00Z"));
+    const run = vi.fn().mockResolvedValue({});
+    const config = { enabled: true, time: "10:00", dedupEnabled: false };
+    const scheduler = startEmailReportScheduler(logger, { config, run });
+    await settle(); expect(run).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(run).toHaveBeenCalledWith("2026-11-05", true, "programado:10:00");
+    await vi.advanceTimersByTimeAsync(300_000);
+    expect(run).toHaveBeenLastCalledWith("2026-11-05", true, "programado:10:00");
+    await scheduler.stop();
+    const restarted = startEmailReportScheduler(logger, { config, run });
+    await settle(); expect(run).toHaveBeenLastCalledWith("2026-11-05", false, "programado:10:00");
+    await restarted.stop();
+    vi.setSystemTime(new Date("2026-11-05T13:09:00Z"));
+    const next = startEmailReportScheduler(logger, { config: { ...config, time: "10:10" }, run });
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(run).toHaveBeenLastCalledWith("2026-11-05", true, "programado:10:10");
+    await next.stop();
   });
 });

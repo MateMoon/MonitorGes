@@ -112,6 +112,9 @@ model EventoGarantia {
 model Usuario {
   id             String        @id @default(uuid()) @db.Uuid
   nombre         String
+  nombres        String?
+  apellido       String?
+  recibirInformeAutomatico Boolean @default(false)
   username       String        @unique
   email          String        @unique
   rol            RolUsuario    @default(LECTOR)
@@ -128,6 +131,77 @@ model Usuario {
   areasResponsabilidad AreaResponsabilidad[] @relation("AreaUsuario")
   areasCreadas   AreaResponsabilidad[] @relation("AreaCreador")
   areasActualizadas AreaResponsabilidad[] @relation("AreaActualizador")
+  tiposGarantia  UsuarioTipoGarantia[]
+  informesIndividuales EnvioInformeIndividual[]
+}
+
+enum EstadoInformeIndividual {
+  RESERVADO
+  EN_PROCESO
+  ACEPTADO_SMTP
+  FALLIDO
+  OMITIDO
+  INCIERTO
+}
+
+model EnvioInformeIndividual {
+  id               String @id @default(uuid()) @db.Uuid
+  usuarioId        String @db.Uuid
+  fechaInforme     DateTime @db.Date
+  claveEjecucion    String @default("diario")
+  destinatario     String
+  huellaConfiguracion String
+  tokenReserva     String @db.Uuid
+  estado           EstadoInformeIndividual @default(RESERVADO)
+  intentos         Int @default(1)
+  iniciadoAt       DateTime @default(now())
+  finalizadoAt     DateTime?
+  aceptadoSmtpAt   DateTime?
+  cantidadGarantias Int @default(0)
+  codigoResultado  String?
+  reintentable     Boolean @default(false)
+  messageId        String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  usuario          Usuario @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+  intentosDetalle  IntentoInformeIndividual[]
+
+  @@unique([usuarioId, fechaInforme, claveEjecucion], map: "EnvioInformeIndividual_usuario_fecha_ejecucion_key")
+  @@index([fechaInforme, estado])
+}
+
+model IntentoInformeIndividual {
+  id               String @id @default(uuid()) @db.Uuid
+  envioId          String @db.Uuid
+  numero           Int
+  estado           EstadoInformeIndividual @default(RESERVADO)
+  iniciadoAt       DateTime @default(now())
+  finalizadoAt     DateTime?
+  aceptadoSmtpAt   DateTime?
+  cantidadGarantias Int @default(0)
+  codigoResultado  String?
+  reintentable     Boolean @default(false)
+  messageId        String?
+  envio            EnvioInformeIndividual @relation(fields: [envioId], references: [id], onDelete: Restrict)
+
+  @@unique([envioId, numero])
+}
+
+// Identidad exclusivamente por nombre, independiente de las combinaciones de áreas.
+model NombreGarantiaAsignable {
+  claveNormalizada String @id
+  nombre           String
+  usuarios         UsuarioTipoGarantia[]
+}
+
+model UsuarioTipoGarantia {
+  usuarioId        String @db.Uuid
+  claveNormalizada String
+  usuario          Usuario @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+  tipoGarantia     NombreGarantiaAsignable @relation(fields: [claveNormalizada], references: [claveNormalizada], onDelete: Restrict)
+
+  @@id([usuarioId, claveNormalizada])
+  @@index([claveNormalizada])
 }
 
 model Establecimiento {

@@ -36,9 +36,9 @@ describe("bootstrap admin password input", () => {
     expect(modes).toEqual([true, false]);
   });
 
-  it("requires 14 characters and an exact confirmation", () => {
-    expect(() => validatePasswordConfirmation("1234567890123", "1234567890123")).toThrow("al menos 14");
-    expect(() => validatePasswordConfirmation("12345678901234", "12345678901235")).toThrow("coincidir");
-    expect(() => validatePasswordConfirmation("12345678901234", "12345678901234")).not.toThrow();
+  it("requires 8 characters and an exact confirmation", () => {
+    expect(() => validatePasswordConfirmation("1234567", "1234567")).toThrow("al menos 8");
+    expect(() => validatePasswordConfirmation("12345678", "12345679")).toThrow("coincidir");
+    expect(() => validatePasswordConfirmation("12345678", "12345678")).not.toThrow();
   });
 });

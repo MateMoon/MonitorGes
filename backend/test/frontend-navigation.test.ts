@@ -18,19 +18,20 @@ describe("navegación del frontend", () => {
     expect(appSource).toContain("if (p === 'estadisticas') return");
   });
 
-  it("presenta carga, errores y confirmación en la configuración del destinatario", () => {
-    expect(pagesSource).toContain('type="email" required');
+  it("presenta la lista global histórica con carga y errores, sin controles de envío", () => {
+    expect(pagesSource).toContain('Destinatarios globales anteriores');
+    expect(pagesSource).toContain('La lista global anterior ya no controla los envíos');
+    expect(pagesSource).toContain('Cargando lista histórica');
     expect(pagesSource).toContain("role=\"alert\" className=\"rounded-lg bg-[#fbe7e5]");
-    expect(pagesSource).toContain("emailSaveError");
+    expect(pagesSource).not.toContain("onSubmit={saveEmail}");
   });
 
   it("no presenta actividad mock ni un estado de ejecucion no verificado como real", () => {
     expect(appSource).not.toContain("06/10/2026 08:32");
     expect(appSource).not.toContain("aria-label=\"Notificaciones\"");
     expect(pagesSource).not.toContain("NOTIFS");
-    expect(pagesSource).toContain("No hay una API de bandeja");
-    expect(pagesSource).toContain("no verificada");
-    expect(pagesSource).toContain("no cuenta con una API");
+    expect(pagesSource).toContain("La recepción y los tipos se administran por usuario; la lista global se conserva para consulta.");
+    expect(appSource).toContain("if (p === 'estadisticas') return");
   });
 
   it("mantiene errores visibles del dashboard sin datos de respaldo mock", () => {

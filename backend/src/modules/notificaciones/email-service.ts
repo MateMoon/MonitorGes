@@ -86,12 +86,13 @@ function errorDetails(error: unknown): { code?: string; command?: string; respon
   };
 }
 
-export function createEmailService(config: EmailConfig) {
+export function createEmailService(config: EmailConfig, timeouts?: { connectionTimeout: number; greetingTimeout: number; socketTimeout: number }) {
   const transporter: Transporter = nodemailer.createTransport({
     host: config.host,
     port: config.port,
     secure: config.secure,
     auth: { user: config.user, pass: config.pass },
+    ...timeouts,
   });
 
   return {

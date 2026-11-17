@@ -9,6 +9,7 @@ vi.mock("../src/db/prisma.js", () => ({
     paciente: { findUnique: db.read, create: db.write, update: db.write, delete: db.write, upsert: db.write },
     importacion: { findFirst: db.read, create: db.write, update: db.write, delete: db.write },
     usuario: { findMany: db.read },
+    usuarioTipoGarantia: { findMany: db.read },
   },
 }));
 import { buildApp } from "../src/app.js";
@@ -119,6 +120,7 @@ describe("POST /api/importaciones/validar", () => {
     authMocks.getSessionUser.mockResolvedValueOnce({ id: "coord", username: "coord", nombre: "Coordinador", email: "coord@example.test", rol: "COORDINADOR_SOME", puedeCargarNominas: false });
     const readOnlyOptions = await app.inject({ method: "GET", url: "/api/garantias/opciones-filtros", headers: { cookie: "ges_session=coord" } });
     expect(readOnlyOptions.statusCode).toBe(200);
+    expect(readOnlyOptions.json().data).toEqual({ responsables: [], problemasSalud: [], nombresGarantia: [] });
   });
 
   it("compara en modo lectura, devuelve solo clasificación/diferencias y no invoca escrituras", async () => {

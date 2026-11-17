@@ -26,6 +26,7 @@ import { dashboardData } from "../src/modules/dashboard/repository.js";
 import { listGuarantees } from "../src/modules/garantias/repository.js";
 import { listQuerySchema } from "../src/modules/garantias/schema.js";
 import { findReportGuarantees } from "../src/modules/notificaciones/email-report-repository.js";
+const admin = { id: "admin", rol: "ADMIN" };
 const { managementPreset } = await import(new URL("../../src/management.ts", import.meta.url).href);
 
 beforeEach(() => {
@@ -39,7 +40,7 @@ beforeEach(() => {
 });
 describe("conteos y selecciones de seguimiento", () => {
   it("calcula las cuatro tarjetas sobre todo el conjunto y excluye cumplidas solo de plazos y urgencias", async () => {
-    const dashboard = await dashboardData("2026-11-03");
+    const dashboard = await dashboardData("2026-11-03", admin);
     expect(dashboard.total).toBe(8);
     expect(dashboard.totalPendientes).toBe(6);
     expect(dashboard.conteosPorGestion).toEqual({ SIN_GESTION: 2, EN_GESTION: 2, PENDIENTE_RESOLUCION: 2, CUMPLIDA: 2 });
@@ -47,27 +48,27 @@ describe("conteos y selecciones de seguimiento", () => {
     expect(dashboard.urgentes.map((row) => row.id)).toEqual(["a", "b", "c", "f"]);
   });
   it("los enlaces de tarjetas incluyen vencidas y coinciden con los totales del backend", async () => {
-    const dashboard = await dashboardData("2026-11-03");
+    const dashboard = await dashboardData("2026-11-03", admin);
     for (const state of Object.keys(dashboard.conteosPorGestion)) {
       const preset = managementPreset(state);
       expect(preset.estados).toContain("vencida");
       const query = listQuerySchema.parse({ estadoGestion: preset.estadoGestion, estado: preset.estados.join(","), soloPendientes: String(preset.soloPendientes) });
-      const result = await listGuarantees(query, "2026-11-03");
+      const result = await listGuarantees(query, "2026-11-03", admin);
       expect(result.total).toBe(dashboard.conteosPorGestion[state as keyof typeof dashboard.conteosPorGestion]);
     }
   });
   it("combina plazo y gestión con búsqueda, igualdad y paginación", async () => {
-    const result = await listGuarantees(listQuerySchema.parse({ estado: "vencida", estadoGestion: "EN_GESTION", nombre: "paciente", responsable: "centro de prueba", page: 1, limit: 1 }), "2026-11-03");
+    const result = await listGuarantees(listQuerySchema.parse({ estado: "vencida", estadoGestion: "EN_GESTION", nombre: "paciente", responsable: "centro de prueba", page: 1, limit: 1 }), "2026-11-03", admin);
     expect(result.total).toBe(1);
     expect(result.rows.map((row) => row.id)).toEqual(["f"]);
-    const second = await listGuarantees(listQuerySchema.parse({ estadoGestion: "CUMPLIDA", page: 2, limit: 1 }), "2026-11-03");
+    const second = await listGuarantees(listQuerySchema.parse({ estadoGestion: "CUMPLIDA", page: 2, limit: 1 }), "2026-11-03", admin);
     expect(second.total).toBe(2); expect(second.rows.map((row) => row.id)).toEqual(["g"]);
   });
   it("el filtro operativo de plazo coincide con su tarjeta y permite consulta histórica de cumplidas", async () => {
-    const dashboard = await dashboardData("2026-11-03");
-    const pending = await listGuarantees(listQuerySchema.parse({ estado: "critica", soloPendientes: "true" }), "2026-11-03");
+    const dashboard = await dashboardData("2026-11-03", admin);
+    const pending = await listGuarantees(listQuerySchema.parse({ estado: "critica", soloPendientes: "true" }), "2026-11-03", admin);
     expect(pending.total).toBe(dashboard.conteosPorEstado.critica);
-    expect((await listGuarantees(listQuerySchema.parse({ estado: "critica", estadoGestion: "CUMPLIDA" }), "2026-11-03")).total).toBe(1);
+    expect((await listGuarantees(listQuerySchema.parse({ estado: "critica", estadoGestion: "CUMPLIDA" }), "2026-11-03", admin)).total).toBe(1);
     expect(listQuerySchema.safeParse({ estadoGestion: "INVENTADO" }).success).toBe(false);
     expect(listQuerySchema.safeParse({ soloPendientes: "yes" }).success).toBe(false);
   });

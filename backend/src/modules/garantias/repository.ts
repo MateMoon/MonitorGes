@@ -2,8 +2,9 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "../../db/prisma.js";
 import type { ListQuery } from "./schema.js";
 import { eventSelect, timelineOrder } from "./management-repository.js";
+import { guaranteeScopeFor, type GuaranteeViewer } from "./assignment-scope.js";
 
-export async function listGuarantees(query: ListQuery, currentDate: string) {
+export async function listGuarantees(query: ListQuery, currentDate: string, user: GuaranteeViewer) {
   const states = query.estado ? (Array.isArray(query.estado) ? query.estado : query.estado.split(",")).map((s) => s.trim().toLowerCase()) : [];
   const allowed = ["vencida", "critica", "proxima", "atencion", "normal"];
   if (states.some((state) => !allowed.includes(state))) throw Object.assign(new Error("Estado inválido"), { statusCode: 400 });
@@ -23,9 +24,10 @@ export async function listGuarantees(query: ListQuery, currentDate: string) {
       : { rutNumero: { contains: rutNumero } });
   }
   if (query.nombre) patientFilters.push({ nombre: { contains: query.nombre, mode: "insensitive" } });
+  const scope = await guaranteeScopeFor(user);
   const where: Prisma.GarantiaWhereInput = {
+    AND: [scope, ...(query.soloPendientes ? [{ estadoGestion: { not: "CUMPLIDA" as const } }] : [])],
     ...(query.estadoGestion ? { estadoGestion: query.estadoGestion } : {}),
-    ...(query.soloPendientes ? { AND: [{ estadoGestion: { not: "CUMPLIDA" } }] } : {}),
     ...(patientFilters.length ? { paciente: { AND: patientFilters } } : {}),
     ...(query.responsable ? { responsable: { equals: query.responsable, mode: "insensitive" } } : {}),
     ...(query.problemaSalud ? { problemaSalud: { equals: query.problemaSalud, mode: "insensitive" } } : {}),
@@ -40,13 +42,17 @@ export async function listGuarantees(query: ListQuery, currentDate: string) {
   return { total, rows };
 }
 
-export const findGuarantee = (id: string) => prisma.garantia.findUnique({ where: { id }, include: { paciente: true, gestionadaPor: { select: { id: true, nombre: true } }, eventos: { select: eventSelect, orderBy: timelineOrder } } });
+export async function findGuarantee(id: string, user: GuaranteeViewer) {
+  const scope = await guaranteeScopeFor(user);
+  return prisma.garantia.findFirst({ where: { id, AND: [scope] }, include: { paciente: true, gestionadaPor: { select: { id: true, nombre: true } }, eventos: { select: eventSelect, orderBy: timelineOrder } } });
+}
 
-export async function listGuaranteeFilterOptions() {
+export async function listGuaranteeFilterOptions(user: GuaranteeViewer) {
+  const where = await guaranteeScopeFor(user);
   const [responsables, problemasSalud, nombresGarantia] = await Promise.all([
-    prisma.garantia.findMany({ distinct: ["responsable"], select: { responsable: true }, orderBy: { responsable: "asc" } }),
-    prisma.garantia.findMany({ distinct: ["problemaSalud"], select: { problemaSalud: true }, orderBy: { problemaSalud: "asc" } }),
-    prisma.garantia.findMany({ distinct: ["nombreGarantia"], select: { nombreGarantia: true }, orderBy: { nombreGarantia: "asc" } }),
+    prisma.garantia.findMany({ where, distinct: ["responsable"], select: { responsable: true }, orderBy: { responsable: "asc" } }),
+    prisma.garantia.findMany({ where, distinct: ["problemaSalud"], select: { problemaSalud: true }, orderBy: { problemaSalud: "asc" } }),
+    prisma.garantia.findMany({ where, distinct: ["nombreGarantia"], select: { nombreGarantia: true }, orderBy: { nombreGarantia: "asc" } }),
   ]);
   const uniqueCaseInsensitive = (values: string[]) => {
     const unique = new Map<string, string>();

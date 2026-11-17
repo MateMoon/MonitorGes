@@ -5,7 +5,6 @@ import { CONTEOS, GARANTIAS_DATA, RESPONSABLES } from '../data/mockData'
 import type { Nav } from './pages1'
 import { compareImportFile, getImportHistory, importFile, validateImportFile, type ImportComparisonResult, type ImportHistoryItem, type ImportPagination, type ImportResult, type ImportValidationResult } from '../services/importaciones'
 import { ComparisonRequestGate } from '../services/comparison-request-gate'
-import { getNotificationEmailConfig } from '../services/notificaciones'
 import ConfiguracionUsuarios from './ConfiguracionUsuarios'
 import { Btn, Card, CardHeader, StatusBadge, Th, cx, inputCls, tdCls } from '../ui'
 
@@ -293,29 +292,6 @@ export function Historial() {
       </div>}
     </div>
   )
-}
-/* ---------------- ALERTAS ---------------- */
-export function Alertas(_props: { initialTab?: string; toast: Toast; canEditEmail: boolean }) {
-  const [emails, setEmails] = useState<string[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  useEffect(() => {
-    const controller = new AbortController()
-    getNotificationEmailConfig(controller.signal).then((config) => {
-      if (!controller.signal.aborted) setEmails(config.emails)
-    }).catch(() => {
-      if (!controller.signal.aborted) setError('No fue posible consultar la lista histórica.')
-    }).finally(() => { if (!controller.signal.aborted) setLoading(false) })
-    return () => controller.abort()
-  }, [])
-  return <div className="page-in space-y-5">
-    <div><h2 className="text-2xl font-semibold">Sistema de alertas</h2></div>
-    <p className="rounded-lg bg-brand-soft px-4 py-3 text-sm text-brand">Los informes individuales se configuran en Gestión de usuarios. La lista global anterior ya no controla los envíos y no se utiliza como alternativa.</p>
-    <Card><CardHeader title="Destinatarios globales anteriores" sub="Consulta histórica; esta lista no activa envíos" />
-      <div className="space-y-2 p-5">{loading ? <p role="status" className="text-sm text-muted">Cargando lista histórica…</p> : error ? <p role="alert" className="rounded-lg bg-[#fbe7e5] px-4 py-3 text-sm text-[#a12a22]">{error}</p> : emails.length ? <ul className="space-y-2 text-sm">{emails.map((email) => <li key={email}>{email}</li>)}</ul> : <p className="text-sm text-muted">No hay destinatarios históricos guardados.</p>}</div>
-    </Card>
-    <p className="rounded-lg bg-canvas px-4 py-3 text-sm text-muted">La recepción y los tipos se administran por usuario; la lista global se conserva para consulta.</p>
-  </div>
 }
 /* ---------------- ESTADÍSTICAS ---------------- */
 function Donut() {

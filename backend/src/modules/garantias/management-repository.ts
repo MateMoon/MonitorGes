@@ -1,5 +1,6 @@
 import { prisma } from "../../db/prisma.js";
 import { decideManagement, ManagementError, type ManagementCommand } from "./management.js";
+import { canAccessGuarantee } from "./assignment-scope.js";
 
 export const timelineOrder = [{ createdAt: "desc" as const }, { secuencia: "desc" as const }];
 export const eventSelect = { id: true, secuencia: true, tipo: true, tipoActuacion: true, comentario: true, estadoAnterior: true, estadoNuevo: true, respaldo: true, createdAt: true, autorNombre: true, usuarioId: true } as const;
@@ -12,6 +13,7 @@ export async function writeManagement(id: string, user: { id: string; nombre: st
     await tx.$queryRaw`SELECT "id" FROM "Garantia" WHERE "id" = ${id}::uuid FOR UPDATE`;
     const current = await tx.garantia.findUnique({ where: { id } });
     if (!current) return null;
+    if (!(await canAccessGuarantee(user, current.nombreGarantia, tx))) return null;
     if (current.revisionGestion !== command.revisionGestion) throw new ManagementError("STALE_MANAGEMENT", "El seguimiento cambió. Recarga el detalle antes de continuar.");
     const decision = decideManagement(current.estadoGestion, command);
     const instant = new Date();

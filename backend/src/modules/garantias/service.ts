@@ -1,6 +1,7 @@
 import { dateToCivil, todayInTimeZone } from "../../utils/dates.js";
 import { findGuarantee, listGuarantees, listGuaranteeFilterOptions } from "./repository.js";
 import { getDaysRemaining, getGuaranteeStatus } from "./status.js";
+import type { GuaranteeViewer } from "./assignment-scope.js";
 
 export function serializeGuarantee(row: any, today: string) {
   const fechaLimite = dateToCivil(row.fechaLimite);
@@ -8,16 +9,16 @@ export function serializeGuarantee(row: any, today: string) {
   return { id: row.id, paciente: { id: row.paciente.id, rut: `${row.paciente.rutNumero}-${row.paciente.dv}`, nombre: row.paciente.nombre }, problemaSalud: row.problemaSalud, nombreGarantia: row.nombreGarantia, fechaInicio: dateToCivil(row.fechaInicio), fechaLimite, diasRestantes, estado: getGuaranteeStatus(fechaLimite, today), responsable: row.responsable, gestionadaAt: row.gestionadaAt, gestionadaPor: row.gestionadaPor, version: row.version, estadoGestion: row.estadoGestion, revisionGestion: row.revisionGestion, ...(row.eventos ? { eventos: row.eventos } : {}) };
 }
 
-export async function getGuarantees(query: Parameters<typeof listGuarantees>[0]) {
+export async function getGuarantees(query: Parameters<typeof listGuarantees>[0], user: GuaranteeViewer) {
   const today = todayInTimeZone();
-  const { rows, total } = await listGuarantees(query, today);
+  const { rows, total } = await listGuarantees(query, today, user);
   return { data: rows.map((row) => serializeGuarantee(row, today)), pagination: { page: query.page, limit: query.limit, total, totalPages: Math.ceil(total / query.limit) } };
 }
 
-export async function getGuarantee(id: string) {
+export async function getGuarantee(id: string, user: GuaranteeViewer) {
   const today = todayInTimeZone();
-  const row = await findGuarantee(id);
+  const row = await findGuarantee(id, user);
   return row ? serializeGuarantee(row, today) : null;
 }
 
-export const getGuaranteeFilterOptions = () => listGuaranteeFilterOptions();
+export const getGuaranteeFilterOptions = (user: GuaranteeViewer) => listGuaranteeFilterOptions(user);

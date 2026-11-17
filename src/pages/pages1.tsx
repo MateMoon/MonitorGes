@@ -10,8 +10,8 @@ import type { Garantia, EstadoGestion } from '../types'
 import { MANAGEMENT, MANAGEMENT_ORDER, managementPreset } from '../management'
 import { Btn, Card, CardHeader, Days, Empty, StatusBadge, Th, cx, inputCls, tdCls } from '../ui'
 
-export type Page = 'dashboard' | 'garantias' | 'detalle' | 'importar' | 'historial' | 'alertas' | 'estadisticas' | 'configuracion'
-export type Nav = (p: Page, o?: { id?: string | number; estados?: Status[]; estadoGestion?: EstadoGestion; soloPendientes?: boolean; tab?: string }) => void
+export type Page = 'dashboard' | 'garantias' | 'detalle' | 'importar' | 'historial' | 'estadisticas' | 'configuracion'
+export type Nav = (p: Page, o?: { id?: string | number; estados?: Status[]; estadoGestion?: EstadoGestion; soloPendientes?: boolean }) => void
 
 export function Logo({ light, size = 36 }: { light?: boolean; size?: number }) {
   return (
@@ -68,7 +68,7 @@ function RowBar({ s }: { s: Status }) {
 }
 
 /* ---------------- DASHBOARD ---------------- */
-export function Dashboard({ nav }: { nav: Nav }) {
+export function Dashboard({ nav, isAdmin = false }: { nav: Nav; isAdmin?: boolean }) {
   const [dashboard, setDashboard] = useState<Awaited<ReturnType<typeof getDashboard>> | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -85,6 +85,7 @@ export function Dashboard({ nav }: { nav: Nav }) {
       <div className="flex items-end justify-between">
         <div>
           <h2 className="text-2xl font-semibold">Resumen de garantías</h2>
+          <p className="mt-1 text-sm text-muted">{isAdmin ? 'Vista general de todas las garantías.' : 'Resumen de los tipos de garantías asignados a su usuario.'}</p>
           <p className="mt-1 flex items-center gap-1.5 text-sm text-muted"><Clock className="size-3.5" />Última actualización de nómina: <span className="font-medium text-ink">{dashboard?.ultimaImportacion ? new Intl.DateTimeFormat('es-CL', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(dashboard.ultimaImportacion.fechaImportacion)) : loading ? 'Cargando…' : 'Sin importaciones registradas'}</span></p>
         </div>
         <Btn variant="primary" onClick={() => nav('importar')}><FileSpreadsheet className="size-4" />Importar nómina</Btn>

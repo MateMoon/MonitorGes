@@ -4,13 +4,14 @@ const db = vi.hoisted(() => ({ findMany: vi.fn(), count: vi.fn(), transaction: v
 vi.mock("../src/db/prisma.js", () => ({ prisma: { garantia: { findMany: db.findMany, count: db.count }, $transaction: db.transaction } }));
 
 import { listGuaranteeFilterOptions, listGuarantees } from "../src/modules/garantias/repository.js";
+const admin = { id: "admin", rol: "ADMIN" };
 
 describe("opciones de filtros de garantias", () => {
   it("elimina duplicados que solo cambian mayusculas y conserva coincidencias exactas insensibles", async () => {
     db.findMany.mockResolvedValueOnce([{ responsable: "Centro Norte" }, { responsable: "CENTRO NORTE" }, { responsable: "Centro Sur" }])
       .mockResolvedValueOnce([{ problemaSalud: "Problema A" }, { problemaSalud: "PROBLEMA A" }])
       .mockResolvedValueOnce([{ nombreGarantia: "Garantia X" }, { nombreGarantia: "GARANTIA X" }]);
-    const result = await listGuaranteeFilterOptions();
+    const result = await listGuaranteeFilterOptions(admin);
     expect(result).toEqual({ responsables: ["Centro Norte", "Centro Sur"], problemasSalud: ["Problema A"], nombresGarantia: ["Garantia X"] });
     expect(db.findMany).toHaveBeenCalledTimes(3);
   });
@@ -19,7 +20,7 @@ describe("opciones de filtros de garantias", () => {
     db.count.mockResolvedValue(0);
     db.findMany.mockResolvedValue([]);
     db.transaction.mockImplementation((queries: Promise<unknown>[]) => Promise.all(queries));
-    await listGuarantees({ page: 2, limit: 12, sort: "fechaLimite", order: "desc", responsable: "Centro Norte", problemaSalud: "Problema A", nombreGarantia: "Garantia X" } as never, "2026-10-14");
+    await listGuarantees({ page: 2, limit: 12, sort: "fechaLimite", order: "desc", responsable: "Centro Norte", problemaSalud: "Problema A", nombreGarantia: "Garantia X" } as never, "2026-10-14", admin);
     const query = db.findMany.mock.calls.at(-1)?.[0];
     expect(query.where).toMatchObject({
       responsable: { equals: "Centro Norte", mode: "insensitive" },

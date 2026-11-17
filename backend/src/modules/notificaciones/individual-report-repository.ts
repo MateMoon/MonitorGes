@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../../db/prisma.js";
-import { normalizeIdentityText } from "../importaciones/identity-normalization.js";
+import { matchingGuaranteeNames } from "../garantias/assignment-scope.js";
+export { matchingGuaranteeNames } from "../garantias/assignment-scope.js";
 import { ABANDONED_EMAIL_ATTEMPT_MS, EMAIL_RETRY_DELAY_MS, MAX_EMAIL_ATTEMPTS, isStoredFailureTransient } from "./email-retry-policy.js";
 import { configurationFingerprint, recipientEligibility, type IndividualClaim, type IndividualOutcome, type IndividualRecipient, type IndividualReportStore } from "./individual-report-service.js";
 import type { ReportGuarantee } from "./report-service.js";
@@ -11,11 +12,6 @@ type RecipientRow = Prisma.UsuarioGetPayload<{ select: typeof recipientSelect }>
 const recipient = (row: RecipientRow | null): IndividualRecipient | null => row ? { id: row.id, email: row.email, activo: row.activo, recibirInformeAutomatico: row.recibirInformeAutomatico, tipos: row.tiposGarantia.map((type) => type.claveNormalizada) } : null;
 const dateValue = (date: string) => new Date(`${date}T00:00:00.000Z`);
 
-export async function matchingGuaranteeNames(db: Prisma.TransactionClient, keys: string[]) {
-  const allowed = new Set(keys);
-  const names = await db.garantia.findMany({ distinct: ["nombreGarantia"], select: { nombreGarantia: true } });
-  return names.map((row) => row.nombreGarantia).filter((name) => allowed.has(normalizeIdentityText(name)));
-}
 export function individualGuaranteeWhere(date: string, names: string[]): Prisma.GarantiaWhereInput {
   const limit = dateValue(date);
   limit.setUTCDate(limit.getUTCDate() + 30);

@@ -2,18 +2,17 @@ import { useEffect, useState } from 'react'
 import { getCurrentUser, logout, type AuthUser } from './services/auth'
 import { registrarGestionGarantia, type ActuacionInput } from './services/garantias'
 import type { EstadoGestion } from './types'
-import { Bell, CheckCircle2, History, LayoutDashboard, ListChecks, LogOut, Settings, Siren, Upload } from 'lucide-react'
+import { CheckCircle2, History, LayoutDashboard, ListChecks, LogOut, Settings, Upload, type LucideIcon } from 'lucide-react'
 import type { Status } from './data'
-import { Alertas, Configuracion, Historial, Importar } from './pages/pages2'
+import { Configuracion, Historial, Importar } from './pages/pages2'
 import { Dashboard, Detalle, Garantias, Login, Logo, type Nav, type Page } from './pages/pages1'
 import { cx } from './ui'
 
-const MENU: { id: Page; label: string; icon: typeof Bell; title: string }[] = [
+const MENU: { id: Page; label: string; icon: LucideIcon; title: string }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, title: 'Dashboard' },
   { id: 'garantias', label: 'Garantías', icon: ListChecks, title: 'Garantías' },
   { id: 'importar', label: 'Importar nómina', icon: Upload, title: 'Importar nómina' },
   { id: 'historial', label: 'Historial de importaciones', icon: History, title: 'Historial de importaciones' },
-  { id: 'alertas', label: 'Alertas', icon: Siren, title: 'Alertas' },
   // Estadísticas permanece temporalmente deshabilitada.
   // { id: 'estadisticas', label: 'Estadísticas', icon: BarChart3, title: 'Estadísticas' },
   { id: 'configuracion', label: 'Gestión de usuarios', icon: Settings, title: 'Gestión de usuarios' },
@@ -28,7 +27,6 @@ export default function App() {
   const [preset, setPreset] = useState<Status[] | undefined>()
   const [gestionPreset, setGestionPreset] = useState<EstadoGestion | undefined>()
   const [pendingPreset, setPendingPreset] = useState(false)
-  const [tab, setTab] = useState<string | undefined>()
   const [navKey, setNavKey] = useState(0)
   const [toastMsg, setToastMsg] = useState<string | null>(null)
 
@@ -39,7 +37,7 @@ export default function App() {
     if (p === 'estadisticas') return
     setPage(p); setNavKey((k) => k + 1)
     if (o?.id) setSel(o.id)
-    setPreset(o?.estados); setTab(o?.tab)
+    setPreset(o?.estados)
     setGestionPreset(o?.estadoGestion); setPendingPreset(o?.soloPendientes ?? false)
     window.scrollTo({ top: 0 })
   }
@@ -94,12 +92,11 @@ export default function App() {
         </header>
 
         <main key={navKey} className="mx-auto max-w-[1500px] p-6 lg:p-8">
-          {page === 'dashboard' && <Dashboard nav={nav} />}
-          {page === 'garantias' && <Garantias nav={nav} initial={preset} initialGestion={gestionPreset} initialPending={pendingPreset} />}
+          {page === 'dashboard' && <Dashboard nav={nav} isAdmin={user.rol === 'ADMIN'} />}
+          {page === 'garantias' && <Garantias nav={nav} isAdmin={user.rol === 'ADMIN'} initial={preset} initialGestion={gestionPreset} initialPending={pendingPreset} />}
           {page === 'detalle' && <Detalle id={sel} nav={nav} onGestionar={gestionar} canManage={user.rol === 'ADMIN' || user.rol === 'PROFESIONAL'} isAdmin={user.rol === 'ADMIN'} />}
           {page === 'importar' && <Importar nav={nav} toast={toast} />}
           {page === 'historial' && <Historial />}
-          {page === 'alertas' && <Alertas initialTab={tab} toast={toast} canEditEmail={user.rol === 'ADMIN'} />}
           {/* Estadísticas sigue temporalmente deshabilitada.
           {page === 'estadisticas' && <Estadisticas />}
           */}

@@ -310,6 +310,7 @@ export default function GestionUsuarios({
         ))}
       </div>
       <p className="rounded-lg bg-brand-soft px-4 py-3 text-sm text-brand">
+        Los usuarios ven en Dashboard y Garantías únicamente sus tipos asignados; ADMIN conserva la vista general.{' '}
         Cada cuenta activa con recepción habilitada recibe únicamente sus tipos de garantías.
         Guardar no envía correos. {reportResults ? (reportResults.automaticEnabled ? 'Envío automático habilitado en configuración.' : 'Envío automático deshabilitado.') : 'No se pudo consultar el estado del envío automático.'}
       </p>

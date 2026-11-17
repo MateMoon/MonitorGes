@@ -48,7 +48,7 @@ describe("API de lectura", () => {
     const response = await app.inject({ method: "GET", url: "/api/garantias?page=2&limit=10&sort=fechaLimite&order=desc", headers: { cookie: "ges_session=lector" } });
     expect(response.statusCode).toBe(200);
     expect(response.json().pagination).toEqual({ page: 2, limit: 10, total: 0, totalPages: 0 });
-    expect(mocks.list).toHaveBeenCalledWith(expect.objectContaining({ page: 2, limit: 10, order: "desc" }), expect.any(String));
+    expect(mocks.list).toHaveBeenCalledWith(expect.objectContaining({ page: 2, limit: 10, order: "desc" }), expect.any(String), expect.objectContaining({ id: "user-reader", rol: "LECTOR" }));
   });
   it("responde 404 para detalle inexistente", async () => {
     const response = await app.inject({ method: "GET", url: "/api/garantias/00000000-0000-4000-8000-000000000000", headers: { cookie: "ges_session=lector" } });

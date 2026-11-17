@@ -34,13 +34,19 @@ try {
   const applied = spawnSync(psql, ["-X", "-h", "127.0.0.1", "-p", connection.port, "-U", "ges_test", "-d", "ges_management_isolated", "-v", "ON_ERROR_STOP=1", "-f", fileURLToPath(new URL("../prisma/migrations/20261103120000_guarantee_management_timeline/migration.sql", import.meta.url))], { windowsHide: true, encoding: "utf8" });
   assert.equal(applied.status, 0, "La migración nueva debe aplicarse sobre registros anteriores en la instancia aislada.");
 
+  // Las consultas y actuaciones actuales requieren las asignaciones por tipo.
+  const assignmentsApplied = spawnSync(psql, ["-X", "-h", "127.0.0.1", "-p", connection.port, "-U", "ges_test", "-d", "ges_management_isolated", "-v", "ON_ERROR_STOP=1", "-f", fileURLToPath(new URL("../prisma/migrations/20261104120000_user_guarantee_type_assignments/migration.sql", import.meta.url))], { windowsHide: true, encoding: "utf8" });
+  assert.equal(assignmentsApplied.status, 0, "Las asignaciones deben existir en la instancia aislada.");
+  await prisma.nombreGarantiaAsignable.create({ data: { claveNormalizada: "garantia aislada", nombre: "Garantía aislada" } });
+  await prisma.usuarioTipoGarantia.create({ data: { usuarioId: professionalId, claveNormalizada: "garantia aislada" } });
+
   const { writeManagement } = await import("../src/modules/garantias/management-repository.js");
   const { findGuarantee, listGuarantees } = await import("../src/modules/garantias/repository.js");
   const { dashboardData } = await import("../src/modules/dashboard/repository.js");
   const { listQuerySchema } = await import("../src/modules/garantias/schema.js");
   const { findReportGuarantees } = await import("../src/modules/notificaciones/email-report-repository.js");
-  const initial = (await findGuarantee(guaranteeId))!;
-  const legacy = (await findGuarantee(legacyId))!;
+  const initial = (await findGuarantee(guaranteeId, admin))!;
+  const legacy = (await findGuarantee(legacyId, admin))!;
   assert.equal(initial.estadoGestion, "SIN_GESTION"); assert.equal(initial.eventos.length, 0);
   assert.equal(legacy.estadoGestion, "EN_GESTION"); assert.equal(legacy.eventos.length, 1);
   assert.equal(legacy.eventos[0].tipo, "ANTECEDENTE_LEGADO");
@@ -53,7 +59,7 @@ try {
   const act = (revisionGestion: number) => ({ operacion: "actuacion" as const, tipoActuacion: "ATENCION_REALIZADA" as const, revisionGestion });
   await writeManagement(guaranteeId, professional, act(0));
   await writeManagement(guaranteeId, professional, act(1));
-  let detail = (await findGuarantee(guaranteeId))!;
+  let detail = (await findGuarantee(guaranteeId, admin))!;
   assert.equal(detail.estadoGestion, "EN_GESTION"); assert.equal(detail.eventos.length, 2);
   assert.equal(detail.gestionadaAt!.toISOString(), detail.eventos[0].createdAt.toISOString());
   assert.equal(detail.fechaLimite.toISOString(), initial.fechaLimite.toISOString());
@@ -66,38 +72,38 @@ try {
   await assert.rejects(writeManagement(guaranteeId, admin, { operacion: "reabrir", motivo: " ", revisionGestion: 3 }));
   await writeManagement(guaranteeId, admin, { operacion: "reabrir", motivo: "Revisión aislada", revisionGestion: 3 });
   await writeManagement(guaranteeId, professional, act(4));
-  detail = (await findGuarantee(guaranteeId))!;
+  detail = (await findGuarantee(guaranteeId, admin))!;
   assert.equal(detail.estadoGestion, "PENDIENTE_RESOLUCION"); assert.equal(detail.eventos.length, 5);
   assert.equal(detail.eventos.find((event) => event.tipo === "CUMPLIMIENTO")!.respaldo, "Constancia aislada");
 
   // Dos solicitudes con la misma revisión: el bloqueo de fila serializa y solo una se aplica.
   const concurrent = await Promise.allSettled([writeManagement(guaranteeId, professional, act(5)), writeManagement(guaranteeId, professional, act(5))]);
   assert.equal(concurrent.filter((result) => result.status === "fulfilled").length, 1);
-  assert.equal((await findGuarantee(guaranteeId))!.eventos.length, 6);
+  assert.equal((await findGuarantee(guaranteeId, admin))!.eventos.length, 6);
 
   // Fallo posterior a INSERT del evento: PostgreSQL debe revertir ambas escrituras.
   await prisma.$executeRawUnsafe(`CREATE FUNCTION reject_management_update() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'failure isolated test'; END $$`);
   await prisma.$executeRawUnsafe('CREATE TRIGGER reject_management_update BEFORE UPDATE ON "Garantia" FOR EACH ROW EXECUTE FUNCTION reject_management_update()');
   await assert.rejects(writeManagement(guaranteeId, admin, { operacion: "estado", estadoGestion: "CUMPLIDA", respaldo: "No debe persistir", revisionGestion: 6 }));
   await prisma.$executeRawUnsafe('DROP TRIGGER reject_management_update ON "Garantia"');
-  detail = (await findGuarantee(guaranteeId))!;
+  detail = (await findGuarantee(guaranteeId, admin))!;
   assert.equal(detail.estadoGestion, "PENDIENTE_RESOLUCION"); assert.equal(detail.revisionGestion, 6); assert.equal(detail.eventos.length, 6);
 
   // Orden estable para instantes iguales, verificado mediante ORDER BY real.
   const tie = new Date("2026-11-03T10:00:00Z");
   await prisma.eventoGarantia.updateMany({ where: { garantiaId: guaranteeId }, data: { createdAt: tie } });
-  detail = (await findGuarantee(guaranteeId))!;
+  detail = (await findGuarantee(guaranteeId, admin))!;
   assert.deepEqual(detail.eventos.map((event) => event.secuencia), detail.eventos.map((event) => event.secuencia).sort((a, b) => b - a));
-  const dashboard = await dashboardData("2026-11-03");
+  const dashboard = await dashboardData("2026-11-03", admin);
   for (const [estadoGestion, count] of Object.entries(dashboard.conteosPorGestion)) {
-    const filtered = await listGuarantees(listQuerySchema.parse({ estadoGestion }), "2026-11-03");
+    const filtered = await listGuarantees(listQuerySchema.parse({ estadoGestion }), "2026-11-03", admin);
     assert.equal(filtered.total, count);
   }
-  assert.equal((await listGuarantees(listQuerySchema.parse({ estado: "vencida", estadoGestion: "PENDIENTE_RESOLUCION" }), "2026-11-03")).total, 1);
+  assert.equal((await listGuarantees(listQuerySchema.parse({ estado: "vencida", estadoGestion: "PENDIENTE_RESOLUCION" }), "2026-11-03", admin)).total, 1);
   // Conexión nueva acredita persistencia, sin depender de objetos en memoria.
   await prisma.$disconnect();
-  assert.equal((await findGuarantee(guaranteeId))!.estadoGestion, "PENDIENTE_RESOLUCION");
-  assert.equal((await findGuarantee(legacyId))!.eventos.filter((event) => event.tipo === "ANTECEDENTE_LEGADO").length, 1);
+  assert.equal((await findGuarantee(guaranteeId, admin))!.estadoGestion, "PENDIENTE_RESOLUCION");
+  assert.equal((await findGuarantee(legacyId, admin))!.eventos.filter((event) => event.tipo === "ANTECEDENTE_LEGADO").length, 1);
   // Misma API que usa React, con sesiones y repositorios reales; sin escuchar puertos HTTP.
   const { buildApp } = await import("../src/app.js");
   const { createSession } = await import("../src/modules/auth/auth-service.js");
@@ -110,7 +116,7 @@ try {
   assert.equal(denied.statusCode, 403);
   const registered = await app.inject({ method: "POST", url: `/api/garantias/${guaranteeId}/gestion`, headers, payload: { tipoActuacion: "OTRA_GESTION", comentario: "Registro mediante API", revisionGestion: 6 } });
   assert.equal(registered.statusCode, 200); assert.equal(registered.json().data.estadoGestion, "PENDIENTE_RESOLUCION");
-  assert.equal((await findGuarantee(guaranteeId))!.eventos.length, 7);
+  assert.equal((await findGuarantee(guaranteeId, admin))!.eventos.length, 7);
   const summary = await app.inject({ method: "GET", url: "/api/dashboard", headers });
   const list = await app.inject({ method: "GET", url: "/api/garantias?estadoGestion=PENDIENTE_RESOLUCION", headers });
   assert.equal(summary.statusCode, 200); assert.equal(list.statusCode, 200);

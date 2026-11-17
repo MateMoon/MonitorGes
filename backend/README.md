@@ -93,9 +93,17 @@ El script muestra códigos/operaciones de transporte cuando están disponibles, 
 
 ## Informes automáticos individuales
 
+### Garantías visibles por usuario
+
+Dashboard y Garantías usan los tipos asignados en Gestión de usuarios (`UsuarioTipoGarantia`). ADMIN conserva acceso a todas las garantías; COORDINADOR_SOME, PROFESIONAL y LECTOR solo ven sus tipos asignados. Sin asignaciones, las listas, opciones de filtros y conteos quedan vacíos. La recepción de correo y el permiso de importar no amplían este acceso.
+
+El backend consulta las asignaciones vigentes en cada petición y usa la misma normalización de nombres que los informes por correo. Aplica el alcance antes de contar y paginar, también en urgencias, detalles y actuaciones. Una garantía fuera del alcance devuelve 404 al consultar su detalle o intentar gestionarla. Los filtros de búsqueda solo reducen el conjunto permitido. No cambia las reglas de plazo o gestión: los informes siguen limitados a garantías pendientes vencidas o dentro de 30 días; el listado conserva sus filtros habituales. No requiere una migración ni cambios en los datos existentes.
+
+### Selección de destinatarios
+
 El programador utiliza exclusivamente cuentas activas con `recibirInformeAutomatico=true`, correo válido y tipos asignados en Gestión de usuarios. Cada cuenta recibe un mensaje independiente a `Usuario.email`, con sus tipos normalizados mediante el mismo criterio del importador. Un tipo puede corresponder a varias cuentas. No hay excepciones por perfil ni una alternativa global.
 
-Se mantienen los rangos de plazo, el orden, las columnas de identificación y los formatos HTML/texto. Se excluyen las garantías `CUMPLIDA`; las demás gestiones no quitan la elegibilidad por fecha. No se envían informes vacíos. La lista de Alertas solo se muestra como histórica y no participa en ningún envío.
+Se mantienen los rangos de plazo, el orden, las columnas de identificación y los formatos HTML/texto. Se excluyen las garantías `CUMPLIDA`; las demás gestiones no quitan la elegibilidad por fecha. No se envían informes vacíos. La sección de Alertas fue retirada de la interfaz; los registros globales históricos permanecen almacenados y no participan en ningún envío.
 
 La migración `20261105120000_individual_email_reports` quedó aplicada en QA el 5 de noviembre de 2026 con autorización expresa y sin respaldo. `EnvioInformeIndividual` e `IntentoInformeIndividual` registran resultados por usuario y fecha; las tablas globales anteriores permanecen intactas.
 

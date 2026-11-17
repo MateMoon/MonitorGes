@@ -274,6 +274,11 @@ export default function UserEditor({
             disabled={busy}
           />
           {fieldError("tiposGarantia")}
+          <p className="text-xs text-muted">
+            {form.rol === "ADMIN"
+              ? "El administrador ve todas las garantías. Estos tipos delimitan sus informes por correo."
+              : "Estos tipos delimitan las garantías visibles en Dashboard y Garantías, y sus informes por correo. Sin tipos asignados no verá garantías."}
+          </p>
           <div className="space-y-3 rounded-lg border border-line p-4">
             <p className="text-sm font-semibold">Permisos y estado</p>
             <label className="flex items-start gap-2 text-sm">

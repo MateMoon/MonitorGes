@@ -6,6 +6,7 @@ vi.mock("../src/db/prisma.js", () => {
   const tx = {
     $queryRaw: vi.fn(async () => db.row ? [{ id: db.row.id }] : []),
     garantia: { findUnique: vi.fn(async () => db.row) },
+    usuarioTipoGarantia: { findUnique: vi.fn(async () => ({ usuarioId: "professional-id" })) },
     eventoGarantia: { create: vi.fn(async ({ data }: any) => {
       if (db.failEvent) throw new Error("event unavailable");
       const event = { id: `event-${db.events.length + 1}`, secuencia: db.events.length + 1, ...data };
@@ -32,7 +33,7 @@ const professional = { id: "professional-id", nombre: "Profesional de prueba", r
 const action = (revisionGestion = db.row.revisionGestion) => ({ operacion: "actuacion" as const, tipoActuacion: "CONTACTO_PACIENTE" as const, revisionGestion, comentario: "Seguimiento de prueba" });
 const complete = (respaldo = "Constancia verificada") => ({ operacion: "estado" as const, estadoGestion: "CUMPLIDA" as const, respaldo, revisionGestion: db.row.revisionGestion });
 beforeEach(() => {
-  db.row = { id: "guarantee-id", estadoGestion: "SIN_GESTION", revisionGestion: 0, fechaLimite: new Date("2026-12-01"), fechaInicio: new Date("2026-10-01"), responsable: "Centro de prueba", version: 1, updatedAt: new Date("2026-10-02"), gestionadaAt: null };
+  db.row = { id: "guarantee-id", nombreGarantia: "Consulta", estadoGestion: "SIN_GESTION", revisionGestion: 0, fechaLimite: new Date("2026-12-01"), fechaInicio: new Date("2026-10-01"), responsable: "Centro de prueba", version: 1, updatedAt: new Date("2026-10-02"), gestionadaAt: null };
   db.events = []; db.failEvent = false; db.failUpdate = false; vi.clearAllMocks();
 });
 describe("seguimiento transaccional (repositorio simulado, sin PostgreSQL)", () => {

@@ -11,10 +11,11 @@ import {
 } from "lucide-react"
 import {
   getUserManagement,
-  getUserGuaranteeTypes,
+  getUserAssignmentOptions,
+  userAssignmentRules,
   resetUserPassword,
   updateUser,
-  type GuaranteeTypeOption,
+  type AssignmentOptions,
   type ManagedUser,
   type UserSummary,
 } from "../services/usuarios"
@@ -157,8 +158,8 @@ function UserStateConfirmation({
       <div className="space-y-4 p-5">
         <p className="text-sm">
           {user.activo
-            ? "Se cerrarán sus sesiones y no podrá ingresar. Sus importaciones, actuaciones y tipos de garantías se conservarán."
-            : "El usuario podrá volver a ingresar con sus credenciales y conservará sus tipos de garantías."}
+            ? "Se cerrarán sus sesiones y no podrá ingresar. Sus importaciones, actuaciones y reglas de asignación se conservarán."
+            : "El usuario podrá volver a ingresar con sus credenciales y conservará sus reglas de asignación."}
         </p>
         {error && (
           <p role="alert" className="text-sm text-[#a12a22]">
@@ -192,7 +193,7 @@ export default function GestionUsuarios({
 }) {
   const [users, setUsers] = useState<ManagedUser[]>([])
   const [summary, setSummary] = useState<UserSummary | null>(null)
-  const [options, setOptions] = useState<GuaranteeTypeOption[]>([])
+  const [options, setOptions] = useState<AssignmentOptions>({ problemasSalud: [], establecimientos: [], tiposGarantia: [] })
   const [reportResults, setReportResults] = useState<IndividualReportResults | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -205,7 +206,7 @@ export default function GestionUsuarios({
     try {
       const [result, choices, reports] = await Promise.all([
         getUserManagement(signal),
-        getUserGuaranteeTypes(signal),
+        getUserAssignmentOptions(signal),
         getIndividualReportResults(signal).catch(() => null),
       ])
       if (!signal?.aborted) {
@@ -269,7 +270,7 @@ export default function GestionUsuarios({
         <div>
           <h2 className="text-2xl font-semibold">Gestión de usuarios</h2>
           <p className="mt-1 text-sm text-muted">
-            Administra las cuentas, permisos y tipos de garantías de los
+            Administra las cuentas, permisos y reglas de asignación de los
             funcionarios.
           </p>
         </div>
@@ -310,8 +311,8 @@ export default function GestionUsuarios({
         ))}
       </div>
       <p className="rounded-lg bg-brand-soft px-4 py-3 text-sm text-brand">
-        Los usuarios ven en Dashboard y Garantías únicamente sus tipos asignados; ADMIN conserva la vista general.{' '}
-        Cada cuenta activa con recepción habilitada recibe únicamente sus tipos de garantías.
+        Los usuarios ven en Dashboard y Garantías los casos que coinciden con sus reglas; ADMIN conserva la vista general.{' '}
+        Cada cuenta activa con recepción habilitada recibe un informe de las garantías que coinciden con esas mismas reglas.
         Guardar no envía correos. {reportResults ? (reportResults.automaticEnabled ? 'Envío automático habilitado en configuración.' : 'Envío automático deshabilitado.') : 'No se pudo consultar el estado del envío automático.'}
       </p>
       {error && (
@@ -370,7 +371,7 @@ export default function GestionUsuarios({
                 <Th>Usuario</Th>
                 <Th>Correo</Th>
                 <Th>Perfil</Th>
-                <Th>Tipos de garantías</Th>
+                <Th>Reglas de asignación</Th>
                 <Th>Informe</Th>
                 <Th>Estado</Th>
                 <Th>Acciones</Th>
@@ -425,17 +426,17 @@ export default function GestionUsuarios({
                     <td className={tdCls}>{roleLabels[user.rol]}</td>
                     <td
                       className={tdCls}
-                      title={user.tiposGarantia
-                        .map((type) => type.nombre)
+                      title={userAssignmentRules(user)
+                        .map((rule) => [options.problemasSalud.find((option) => option.claveNormalizada === rule.problemaSalud)?.nombre ?? (rule.problemaSalud || "Cualquier problema"), options.establecimientos.find((option) => option.claveNormalizada === rule.establecimiento)?.nombre ?? (rule.establecimiento || "Cualquier establecimiento"), options.tiposGarantia.find((option) => option.claveNormalizada === rule.tipoGarantia)?.nombre ?? (rule.tipoGarantia || "Cualquier tipo")].join(" / "))
                         .join(", ")}
                     >
                       <span className="rounded-full bg-brand-soft px-2.5 py-1 text-xs font-medium text-brand">
-                        {user.tiposGarantia.length} asignados
+                        {userAssignmentRules(user).length} reglas
                       </span>
-                      {user.tiposGarantia.length > 0 && (
+                      {userAssignmentRules(user).length > 0 && (
                         <p className="mt-1 max-w-48 truncate text-xs text-muted">
-                          {user.tiposGarantia
-                            .map((type) => type.nombre)
+                          {userAssignmentRules(user)
+                            .map((rule) => options.problemasSalud.find((option) => option.claveNormalizada === rule.problemaSalud)?.nombre ?? options.tiposGarantia.find((option) => option.claveNormalizada === rule.tipoGarantia)?.nombre ?? (rule.problemaSalud || rule.tipoGarantia || rule.establecimiento))
                             .join(", ")}
                         </p>
                       )}

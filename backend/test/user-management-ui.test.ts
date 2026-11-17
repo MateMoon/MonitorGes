@@ -14,6 +14,7 @@ import {
   fireEvent,
   render,
   screen,
+  within,
   waitFor,
 } from "@testing-library/react"
 import { userEvent } from "@testing-library/user-event"
@@ -21,12 +22,13 @@ import { userEvent } from "@testing-library/user-event"
 const api = vi.hoisted(() => ({
   getUserManagement: vi.fn(),
   getUserGuaranteeTypes: vi.fn(),
+  getUserAssignmentOptions: vi.fn(),
   createUser: vi.fn(),
   updateUser: vi.fn(),
   resetUserPassword: vi.fn(),
   getIndividualReportResults: vi.fn(),
 }))
-vi.mock("../../src/services/usuarios", () => api)
+vi.mock("../../src/services/usuarios", async (importOriginal) => ({ ...await importOriginal<object>(), ...api }))
 vi.mock("../../src/services/notificaciones", () => ({ getIndividualReportResults: api.getIndividualReportResults }))
 const pageModule = "../../src/pages/GestionUsuarios.tsx"
 const apiModule = "../../src/services/api.ts"
@@ -58,6 +60,10 @@ const legacy = {
   createdAt: "2026-01-01",
 }
 const toast = vi.fn()
+async function chooseAssignment(user: ReturnType<typeof userEvent.setup>, name: string, label: string) {
+  await user.click(screen.getByRole("combobox", { name }))
+  await user.click(within(screen.getByRole("listbox", { name: `Opciones de ${name}` })).getByRole("option", { name: label }))
+}
 async function openNew() {
   render(createElement(GestionUsuarios, { isAdmin: true, toast }))
   const button = await screen.findByRole("button", { name: "Nuevo usuario" })
@@ -99,6 +105,7 @@ beforeEach(() => {
     resumen: { total: 1, activos: 1, informesHabilitados: 0 },
   })
   api.getUserGuaranteeTypes.mockResolvedValue(types)
+  api.getUserAssignmentOptions.mockResolvedValue({ tiposGarantia: types, problemasSalud: [{ claveNormalizada: "diabetes", nombre: "Diabetes" }], establecimientos: [{ claveNormalizada: "centro norte", nombre: "Centro Norte" }] })
   api.createUser.mockResolvedValue({
     ...legacy,
     nombres: "María",
@@ -153,7 +160,7 @@ describe("Gestión de usuarios: formularios e interacciones", () => {
     expect(api.createUser).not.toHaveBeenCalled()
   })
 
-  it("muestra validaciones y envía nombre, apellido, permisos y varios tipos", async () => {
+  it("muestra validaciones y envía nombre, apellido, permisos y varias reglas", async () => {
     const user = await openNew()
     await user.click(screen.getByRole("button", { name: "Crear usuario" }))
     expect(screen.getByText("Ingresa el apellido.")).toBeTruthy()
@@ -167,14 +174,11 @@ describe("Gestión de usuarios: formularios e interacciones", () => {
     await user.click(
       screen.getByLabelText("Recibir informe automático por correo"),
     )
-    const combo = screen.getByRole("combobox", { name: "Tipos de garantías" })
-    await user.type(combo, "especialidad")
-    await user.keyboard("{Enter}")
-    await user.clear(combo)
-    await user.type(combo, "tratamiento")
-    await user.click(screen.getByRole("option", { name: "Tratamiento" }))
-    expect(screen.getByText("2 tipos seleccionados")).toBeTruthy()
-    await user.keyboard("{Escape}")
+    await chooseAssignment(user, "Problemas de salud, grupo 1", "Diabetes")
+    await chooseAssignment(user, "Establecimientos, grupo 1", "Centro Norte")
+    await chooseAssignment(user, "Tipos de garantía, grupo 1", "Consulta de especialidad")
+    await user.click(screen.getByRole("button", { name: "Agregar otro grupo" }))
+    await chooseAssignment(user, "Tipos de garantía, grupo 2", "Tratamiento")
     expect(screen.getByRole("dialog")).toBeTruthy()
     await user.click(screen.getByRole("button", { name: "Crear usuario" }))
     await waitFor(() => expect(api.createUser).toHaveBeenCalledTimes(1))
@@ -185,7 +189,10 @@ describe("Gestión de usuarios: formularios e interacciones", () => {
       username: "maria.perez",
       puedeCargarNominas: true,
       recibirInformeAutomatico: true,
-      tiposGarantia: ["consulta de especialidad", "tratamiento"],
+      reglasAsignacion: [
+        { problemaSalud: "diabetes", establecimiento: "centro norte", tipoGarantia: "consulta de especialidad" },
+        { problemaSalud: "", establecimiento: "", tipoGarantia: "tratamiento" },
+      ],
     })
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
     expect(toast).toHaveBeenCalledWith(expect.stringContaining("Guardar no envía correos"))
@@ -225,6 +232,87 @@ describe("Gestión de usuarios: formularios e interacciones", () => {
     )
   })
 
+  it("selecciona varios problemas y tipos en un solo grupo y guarda sus cuatro combinaciones", async () => {
+    api.getUserAssignmentOptions.mockResolvedValueOnce({ tiposGarantia: types, problemasSalud: [{ claveNormalizada: "diabetes", nombre: "Diabetes" }, { claveNormalizada: "hipertension", nombre: "Hipertensión" }], establecimientos: [{ claveNormalizada: "centro norte", nombre: "Centro Norte" }] })
+    const user = await openNew()
+    await fillNew(user)
+    await chooseAssignment(user, "Problemas de salud, grupo 1", "Diabetes")
+    const problems = screen.getByRole("combobox", { name: "Problemas de salud, grupo 1" })
+    await user.type(problems, "hipertension")
+    await user.keyboard("{ArrowDown}{Enter}{Escape}")
+    expect(screen.getByRole("dialog")).toBeTruthy()
+    await chooseAssignment(user, "Establecimientos, grupo 1", "Centro Norte")
+    await chooseAssignment(user, "Tipos de garantía, grupo 1", "Consulta de especialidad")
+    await chooseAssignment(user, "Tipos de garantía, grupo 1", "Tratamiento")
+    expect(screen.getByRole("status").textContent).toContain("4 combinaciones asignadas")
+    expect(screen.queryByRole("heading", { name: "Grupo 2" })).toBeNull()
+    await user.click(screen.getByRole("button", { name: "Crear usuario" }))
+    await waitFor(() => expect(api.createUser).toHaveBeenCalledTimes(1))
+    expect(api.createUser.mock.calls[0][0].reglasAsignacion).toEqual([
+      { problemaSalud: "diabetes", establecimiento: "centro norte", tipoGarantia: "consulta de especialidad" },
+      { problemaSalud: "diabetes", establecimiento: "centro norte", tipoGarantia: "tratamiento" },
+      { problemaSalud: "hipertension", establecimiento: "centro norte", tipoGarantia: "consulta de especialidad" },
+      { problemaSalud: "hipertension", establecimiento: "centro norte", tipoGarantia: "tratamiento" },
+    ])
+  })
+
+  it("abre reglas compatibles como un grupo y puede cerrar sin cambios ni ampliar el acceso", async () => {
+    const rules = [
+      { problemaSalud: "diabetes", establecimiento: "centro norte", tipoGarantia: "consulta de especialidad" },
+      { problemaSalud: "diabetes", establecimiento: "centro norte", tipoGarantia: "tratamiento" },
+    ]
+    api.getUserManagement.mockResolvedValueOnce({ data: [{ ...legacy, reglasAsignacion: rules }], resumen: { total: 1, activos: 1, informesHabilitados: 0 } })
+    render(createElement(GestionUsuarios, { isAdmin: true, toast }))
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole("button", { name: `Editar ${legacy.nombre}` }))
+    expect(screen.getByRole("status").textContent).toContain("2 combinaciones asignadas")
+    expect(screen.queryByRole("heading", { name: "Grupo 2" })).toBeNull()
+    await user.click(screen.getByRole("button", { name: "Cancelar" }))
+    expect(screen.queryByRole("dialog")).toBeNull()
+    expect(api.updateUser).not.toHaveBeenCalled()
+  })
+
+  it("conserva grupos distintos cuando cambian problema y establecimiento", async () => {
+    const rules = [
+      { problemaSalud: "diabetes", establecimiento: "centro norte", tipoGarantia: "tratamiento" },
+      { problemaSalud: "hipertension", establecimiento: "centro sur", tipoGarantia: "tratamiento" },
+    ]
+    api.getUserManagement.mockResolvedValueOnce({ data: [{ ...legacy, reglasAsignacion: rules }], resumen: { total: 1, activos: 1, informesHabilitados: 0 } })
+    render(createElement(GestionUsuarios, { isAdmin: true, toast }))
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole("button", { name: `Editar ${legacy.nombre}` }))
+    expect(screen.getByRole("heading", { name: "Grupo 2" })).toBeTruthy()
+    await user.click(screen.getByRole("button", { name: "Guardar cambios" }))
+    await waitFor(() => expect(api.updateUser).toHaveBeenCalledWith(legacy.id, expect.objectContaining({ reglasAsignacion: rules })))
+  })
+
+  it("evita guardar un grupo adicional sin criterios y permite eliminarlo", async () => {
+    const user = await openNew()
+    await fillNew(user)
+    await chooseAssignment(user, "Tipos de garantía, grupo 1", "Tratamiento")
+    await user.click(screen.getByRole("button", { name: "Agregar otro grupo" }))
+    await user.click(screen.getByRole("button", { name: "Crear usuario" }))
+    expect(screen.getByText("Selecciona al menos un criterio en cada grupo o elimina el grupo vacío.")).toBeTruthy()
+    expect(api.createUser).not.toHaveBeenCalled()
+    await user.click(screen.getByRole("button", { name: "Eliminar grupo 2" }))
+    await user.click(screen.getByRole("button", { name: "Limpiar grupo 1" }))
+    await user.click(screen.getByRole("button", { name: "Crear usuario" }))
+    await waitFor(() => expect(api.createUser).toHaveBeenCalledTimes(1))
+    expect(api.createUser.mock.calls[0][0].reglasAsignacion).toEqual([])
+  })
+
+  it("recupera los tres criterios persistidos al editar y permite cambiarlos", async () => {
+    api.getUserManagement.mockResolvedValueOnce({ data: [{ ...legacy, reglasAsignacion: [{ problemaSalud: "diabetes", establecimiento: "centro norte", tipoGarantia: "tratamiento" }] }], resumen: { total: 1, activos: 1, informesHabilitados: 0 } })
+    render(createElement(GestionUsuarios, { isAdmin: true, toast }))
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole("button", { name: `Editar ${legacy.nombre}` }))
+    expect(screen.getByRole("button", { name: "Quitar Diabetes de Problemas de salud, grupo 1" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Quitar Centro Norte de Establecimientos, grupo 1" })).toBeTruthy()
+    await chooseAssignment(user, "Tipos de garantía, grupo 1", "Cualquier tipo")
+    await user.click(screen.getByRole("button", { name: "Guardar cambios" }))
+    await waitFor(() => expect(api.updateUser).toHaveBeenCalledWith(legacy.id, expect.objectContaining({ reglasAsignacion: [{ problemaSalud: "diabetes", establecimiento: "centro norte", tipoGarantia: "" }] })))
+  })
+
   it("recupera las selecciones al editar y conserva completo el nombre antiguo", async () => {
     const user = userEvent.setup()
     render(createElement(GestionUsuarios, { isAdmin: true, toast }))
@@ -241,9 +329,10 @@ describe("Gestión de usuarios: formularios e interacciones", () => {
     expect(
       (screen.getByLabelText("Nombre de usuario") as HTMLInputElement).readOnly,
     ).toBe(true)
-    expect(screen.getByText("1 tipos seleccionados")).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Quitar Consulta de especialidad de Tipos de garantía, grupo 1" })).toBeTruthy()
+    expect(screen.getByRole("combobox", { name: "Problemas de salud, grupo 1" }).getAttribute("placeholder")).toBe("Cualquier problema")
     await user.click(
-      screen.getByRole("button", { name: "Quitar Consulta de especialidad" }),
+      screen.getByRole("button", { name: "Limpiar grupo 1" }),
     )
     await user.click(screen.getByRole("button", { name: "Guardar cambios" }))
     await waitFor(() =>
@@ -253,7 +342,7 @@ describe("Gestión de usuarios: formularios e interacciones", () => {
           nombre: legacy.nombre,
           nombres: null,
           apellido: null,
-          tiposGarantia: [],
+          reglasAsignacion: [],
         }),
       ),
     )

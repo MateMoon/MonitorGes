@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 const db = vi.hoisted(() => ({ row: null as any, events: [] as any[], failEvent: false, failUpdate: false, tx: null as any }));
 vi.mock("../src/db/prisma.js", () => {
   const tx = {
+    usuario: { findUnique: vi.fn(async () => ({ reglasAsignacion: [{ problemaSalud: "", establecimiento: "", tipoGarantia: "consulta" }] })) },
     $queryRaw: vi.fn(async () => db.row ? [{ id: db.row.id }] : []),
     garantia: { findUnique: vi.fn(async () => db.row) },
     usuarioTipoGarantia: { findUnique: vi.fn(async () => ({ usuarioId: "professional-id" })) },

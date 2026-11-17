@@ -48,6 +48,7 @@ vi.mock("../src/db/prisma.js", () => {
       : row);
   };
   const prisma: any = {
+    usuario: { findUnique: vi.fn(async ({ where }: any) => memory.users.get(where.id) ?? null) },
     usuarioTipoGarantia: {
       findMany: vi.fn(async ({ where }: any) => (memory.assignments.get(where.usuarioId) ?? []).map((claveNormalizada) => ({ claveNormalizada }))),
       findUnique: vi.fn(async ({ where: { usuarioId_claveNormalizada: key } }: any) =>
@@ -211,7 +212,9 @@ describe("Dashboard y Garantías según asignaciones de usuario", () => {
     expect((await get("/api/dashboard")).json().data.total).toBe(5);
     const scope = await guaranteeScopeFor(memory.users.get("reader"));
     const names = await matchingGuaranteeNames(prisma, memory.assignments.get("reader")!);
-    expect(scope.nombreGarantia).toEqual(individualGuaranteeWhere(today, names).nombreGarantia);
+    const scoped = await prisma.garantia.findMany({ where: scope });
+    expect(scoped).toHaveLength(5);
+    expect(scoped.every((row: any) => names.includes(row.nombreGarantia))).toBe(true);
     expect(names).toContain("CONSÚLTA  de   Especialidad!!!");
     expect(names).not.toContain("Otro tipo");
   });
@@ -228,5 +231,46 @@ describe("Dashboard y Garantías según asignaciones de usuario", () => {
     expect((await manage(6)).statusCode).toBe(404);
     expect(memory.events).toHaveLength(1);
     expect((await manage(4, "admin")).statusCode).toBe(200);
+  });
+
+  it("combina los tres criterios en cada regla y suma reglas sin cruzar sus dimensiones", async () => {
+    const rules = [
+      { problemaSalud: "problema consulta", establecimiento: "centro consulta", tipoGarantia: "consulta de especialidad" },
+      { problemaSalud: "problema tratamiento", establecimiento: "centro tratamiento", tipoGarantia: "tratamiento" },
+    ];
+    memory.users.get("reader").reglasAsignacion = rules;
+    memory.users.get("professional").reglasAsignacion = rules;
+    memory.rows.push(
+      { ...memory.rows[0], id: id(7), responsable: "Centro tratamiento" },
+      { ...memory.rows[0], id: id(8), problemaSalud: "Problema tratamiento" },
+      { ...memory.rows[3], id: id(9), responsable: "Centro consulta" },
+    );
+    const list = (await get("/api/garantias")).json();
+    expect(list.pagination.total).toBe(5);
+    expect(list.data.map((row: any) => row.id).sort()).toEqual([id(1), id(2), id(3), id(4), id(6)]);
+    expect((await get("/api/dashboard")).json().data).toMatchObject({ total: 5, totalPendientes: 4 });
+    expect((await get(`/api/garantias/${id(7)}`)).statusCode).toBe(404);
+    expect((await manage(7)).statusCode).toBe(404);
+    expect((await manage(8)).statusCode).toBe(404);
+    expect(memory.events).toHaveLength(0);
+    expect((await manage(4)).statusCode).toBe(200);
+  });
+
+  it("una regla puede cubrir cualquier tipo; quitar todas las reglas revoca el acceso aunque queden tipos antiguos", async () => {
+    memory.users.get("reader").reglasAsignacion = [{ problemaSalud: "problema consulta", establecimiento: "", tipoGarantia: "" }];
+    expect((await get("/api/garantias")).json().pagination.total).toBe(4);
+    memory.users.get("reader").reglasAsignacion = [];
+    expect((await get("/api/garantias")).json().pagination.total).toBe(0);
+    expect((await get(`/api/garantias/${id(1)}`)).statusCode).toBe(404);
+    expect((await get("/api/dashboard")).json().data.total).toBe(0);
+  });
+
+  it("ignora tildes, puntuación y mayúsculas en problema y establecimiento y deniega reglas corruptas", async () => {
+    memory.rows[0].problemaSalud = "PRÓBLEMA  Consulta!!!";
+    memory.rows[0].responsable = "CÉNTRO  CONSULTA!!!";
+    memory.users.get("reader").reglasAsignacion = [{ problemaSalud: "problema consulta", establecimiento: "centro consulta", tipoGarantia: "consulta de especialidad" }];
+    expect((await get(`/api/garantias/${id(1)}`)).statusCode).toBe(200);
+    memory.users.get("reader").reglasAsignacion = [{ problemaSalud: "", establecimiento: "", tipoGarantia: "" }];
+    expect((await get("/api/garantias")).json().pagination.total).toBe(0);
   });
 });

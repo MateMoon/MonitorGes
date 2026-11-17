@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   listUsers: vi.fn(),
   getUser: vi.fn(),
   listGuaranteeTypes: vi.fn(),
+  listAssignmentOptions: vi.fn(),
   createManagedUser: vi.fn(),
   updateManagedUser: vi.fn(),
   changePassword: vi.fn(),
@@ -22,6 +23,7 @@ vi.mock("../src/modules/usuarios/repository.js", async (importOriginal) => ({
       "listUsers",
       "getUser",
       "listGuaranteeTypes",
+      "listAssignmentOptions",
       "createManagedUser",
       "updateManagedUser",
       "changePassword",
@@ -74,6 +76,7 @@ describe("administración de usuarios con autorización real", () => {
     mocks.listGuaranteeTypes.mockResolvedValue([
       { claveNormalizada: "tratamiento", nombre: "Tratamiento" },
     ])
+    mocks.listAssignmentOptions.mockResolvedValue({ problemasSalud: [], establecimientos: [], tiposGarantia: [] })
   })
   afterAll(() => app.close())
 
@@ -138,6 +141,7 @@ describe("administración de usuarios con autorización real", () => {
       for (const [method, url, payload] of [
         ["GET", "/api/usuarios", undefined],
         ["GET", "/api/usuarios/tipos-garantia", undefined],
+        ["GET", "/api/usuarios/opciones-asignacion", undefined],
         ["GET", "/api/usuarios/user-id", undefined],
         ["POST", "/api/usuarios", input],
         [
@@ -187,6 +191,9 @@ describe("administración de usuarios con autorización real", () => {
   })
 
   it("conserva el contrato de listado y agrega resumen y opciones reales", async () => {
+    const rules = await app.inject({ method: "GET", url: "/api/usuarios/opciones-asignacion", headers })
+    expect(rules.statusCode).toBe(200)
+    expect(rules.json().data).toEqual({ problemasSalud: [], establecimientos: [], tiposGarantia: [] })
     const list = await app.inject({
       method: "GET",
       url: "/api/usuarios",

@@ -7,6 +7,7 @@ import {
   createManagedUser,
   getUser,
   listGuaranteeTypes,
+  listAssignmentOptions,
   listUsers,
   updateManagedUser,
   UserManagementError,
@@ -35,6 +36,7 @@ function handleError(error: unknown, reply: FastifyReply) {
 export async function userRoutes(app: FastifyInstance) {
   const adminOnly = requireRoles("ADMIN")
   app.get("/", { preHandler: adminOnly }, async () => listUsers())
+  app.get("/opciones-asignacion", { preHandler: adminOnly }, async () => ({ data: await listAssignmentOptions() }))
   app.get("/tipos-garantia", { preHandler: adminOnly }, async () => ({
     data: await listGuaranteeTypes(),
   }))

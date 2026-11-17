@@ -22,6 +22,10 @@ const handles = new Set<EmailSchedulerHandle>();
 try {
   const [identity] = await prisma.$queryRaw<Array<{ cluster: string }>>`SELECT current_setting('cluster_name') AS cluster`;
   assert.equal(identity.cluster, "ges_scheduled_reports_isolated");
+  let ruleMigration = new URL("../prisma/migrations/20261117120000_user_assignment_rules/migration.sql", import.meta.url);
+  if (!fs.existsSync(fileURLToPath(ruleMigration))) ruleMigration = new URL("../../prisma/migrations/20261117120000_user_assignment_rules/migration.sql", import.meta.url);
+  const rulesApplied = spawnSync(process.env.GES_TEST_PSQL!, ["-X", "-h", "127.0.0.1", "-p", url.port, "-U", "ges_test", "-d", "ges_scheduled_reports_isolated", "-v", "ON_ERROR_STOP=1", "-f", fileURLToPath(ruleMigration)], { windowsHide: true, encoding: "utf8" });
+  assert.equal(rulesApplied.status, 0, "Se aplica la migración de reglas de asignación.");
   for (const key of ["consulta", "tratamiento", "sin filas"]) await prisma.nombreGarantiaAsignable.create({ data: { claveNormalizada: key, nombre: key } });
   const makeUser = (username: string, key: string | null, patch = {}) => prisma.usuario.create({ data: { nombre: username, username, email: `${username}@example.test`, activo: true, recibirInformeAutomatico: true, ...patch, ...(key ? { tiposGarantia: { create: { claveNormalizada: key } } } : {}) } });
   const a = await makeUser("a", "consulta");

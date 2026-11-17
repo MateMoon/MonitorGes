@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client"
 import { prisma } from "../../db/prisma.js"
 import { normalizeIdentityText } from "../importaciones/identity-normalization.js"
 import type { CreateUserInput, UpdateUserInput } from "./schema.js"
+import { legacyAssignmentRules, readAssignmentRules, type AssignmentRule } from "../garantias/assignment-rules.js"
 
 export class UserManagementError extends Error {
   constructor(
@@ -26,6 +27,7 @@ const safeSelect = {
   activo: true,
   ultimoAccesoAt: true,
   createdAt: true,
+  reglasAsignacion: true,
   tiposGarantia: {
     select: {
       tipoGarantia: { select: { claveNormalizada: true, nombre: true } },
@@ -36,6 +38,7 @@ type UserRecord = Prisma.UsuarioGetPayload<{ select: typeof safeSelect }>
 function publicUser(row: UserRecord) {
   return {
     ...row,
+    reglasAsignacion: readAssignmentRules(row.reglasAsignacion) ?? legacyAssignmentRules(row.tiposGarantia.map(({ tipoGarantia }) => tipoGarantia.claveNormalizada)),
     tiposGarantia: row.tiposGarantia
       .map(({ tipoGarantia }) => tipoGarantia)
       .sort((a, b) => a.nombre.localeCompare(b.nombre, "es")),
@@ -91,6 +94,21 @@ export async function listUsers() {
       informesHabilitados: data.filter((user) => user.recibirInformeAutomatico)
         .length,
     },
+  }
+}
+
+export async function listAssignmentOptions(db: Pick<Prisma.TransactionClient, "garantia" | "problemaSalud" | "establecimiento" | "tipoGarantia" | "nombreGarantiaAsignable"> = prisma) {
+  const [problems, establishments, imported, types] = await Promise.all([
+    db.problemaSalud.findMany({ select: { nombre: true }, where: { activo: true } }),
+    db.establecimiento.findMany({ select: { nombre: true }, where: { activo: true } }),
+    db.garantia.findMany({ distinct: ["problemaSalud", "responsable"], select: { problemaSalud: true, responsable: true } }),
+    listGuaranteeTypes(db),
+  ])
+  const options = (names: string[]) => [...new Map(names.filter((name) => normalizeIdentityText(name)).map((name) => [normalizeIdentityText(name), { claveNormalizada: normalizeIdentityText(name), nombre: name.trim() }])).values()].sort((a, b) => a.nombre.localeCompare(b.nombre, "es"))
+  return {
+    problemasSalud: options([...problems.map((entry) => entry.nombre), ...imported.map((entry) => entry.problemaSalud)]),
+    establecimientos: options([...establishments.map((entry) => entry.nombre), ...imported.map((entry) => entry.responsable)]),
+    tiposGarantia: types,
   }
 }
 
@@ -161,11 +179,35 @@ async function saveTypes(
     })
 }
 
+async function saveAssignmentRules(tx: Prisma.TransactionClient, usuarioId: string, rules: AssignmentRule[] | undefined, types: string[] | undefined) {
+  if (rules === undefined) {
+    if (types !== undefined) await tx.usuario.update({ where: { id: usuarioId }, data: { reglasAsignacion: legacyAssignmentRules(types) }, select: { id: true } })
+    return
+  }
+  const options = await listAssignmentOptions(tx)
+  const allowed = {
+    problemaSalud: new Set(options.problemasSalud.map((option) => option.claveNormalizada)),
+    establecimiento: new Set(options.establecimientos.map((option) => option.claveNormalizada)),
+    tipoGarantia: new Set(options.tiposGarantia.map((option) => option.claveNormalizada)),
+  }
+  // Existing selections remain editable even if their category disappears from a later import.
+  const previous = await tx.usuario.findUnique({ where: { id: usuarioId }, select: { reglasAsignacion: true } })
+  for (const rule of readAssignmentRules(previous?.reglasAsignacion) ?? []) {
+    for (const key of ["problemaSalud", "establecimiento", "tipoGarantia"] as const) if (rule[key]) allowed[key].add(rule[key])
+  }
+  const unique = [...new Map(rules.map((rule) => [JSON.stringify(rule), rule])).values()]
+  if (readAssignmentRules(unique)?.length !== unique.length || unique.some((rule) =>
+    !(rule.problemaSalud || rule.establecimiento || rule.tipoGarantia) ||
+    (["problemaSalud", "establecimiento", "tipoGarantia"] as const).some((key) => rule[key] && (!allowed[key].has(rule[key]) || normalizeIdentityText(rule[key]) !== rule[key]))))
+    throw new UserManagementError("INVALID_ASSIGNMENT_RULE", "Una regla contiene valores no disponibles. Revisa problema de salud, establecimiento y tipo de garantía.")
+  await tx.usuario.update({ where: { id: usuarioId }, data: { reglasAsignacion: unique }, select: { id: true } })
+}
+
 export async function createManagedUser(
   input: CreateUserInput,
   passwordHash: string,
 ) {
-  const { password: _password, tiposGarantia, ...fields } = input
+  const { password: _password, tiposGarantia, reglasAsignacion, ...fields } = input
   const nombres = input.nombres ?? input.nombre
   return transaction(async (tx) => {
     const user = await tx.usuario.create({
@@ -178,6 +220,7 @@ export async function createManagedUser(
       select: { id: true },
     })
     await saveTypes(tx, user.id, tiposGarantia)
+    await saveAssignmentRules(tx, user.id, reglasAsignacion, tiposGarantia)
     return publicUser(
       await tx.usuario.findUniqueOrThrow({
         where: { id: user.id },
@@ -220,7 +263,7 @@ export async function updateManagedUser(id: string, input: UpdateUserInput) {
           409,
         )
     }
-    const { tiposGarantia, ...fields } = input
+    const { tiposGarantia, reglasAsignacion, ...fields } = input
     const split =
       input.nombres != null && input.apellido != null
         ? {
@@ -246,6 +289,7 @@ export async function updateManagedUser(id: string, input: UpdateUserInput) {
       select: { id: true },
     })
     await saveTypes(tx, id, tiposGarantia)
+    await saveAssignmentRules(tx, id, reglasAsignacion, tiposGarantia)
     if (!input.activo)
       await tx.sesionUsuario.deleteMany({ where: { usuarioId: id } })
     return publicUser(

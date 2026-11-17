@@ -88,7 +88,7 @@ export function Garantias({ nav, isAdmin = false, initial, initialGestion, initi
     <div className="page-in space-y-4">
       <div>
         <h2 className="text-2xl font-semibold">Garantías</h2>
-        <p className="mt-1 text-sm text-muted">{isAdmin ? 'Listado de todas las garantías del sistema.' : 'Listado de los tipos de garantías asignados a su usuario.'}</p>
+        <p className="mt-1 text-sm text-muted">{isAdmin ? 'Listado de todas las garantías del sistema.' : 'Listado de las garantías que coinciden con sus reglas de asignación.'}</p>
       </div>
       <Card className="p-4">
         <div className="grid grid-cols-2 gap-3 xl:grid-cols-[1.5fr_1fr_1fr_1fr_1fr_auto]">
@@ -155,7 +155,7 @@ export function Garantias({ nav, isAdmin = false, initial, initialGestion, initi
             </tbody>
           </table>
         </div>
-        {!loading && !error && rows.length === 0 && <Empty title="Sin resultados" text={isAdmin ? 'No hay garantías que coincidan con los filtros aplicados. Pruebe con otro RUT, nombre o amplíe los estados visibles.' : 'No hay garantías de sus tipos asignados que coincidan con los filtros. Puede limpiar los filtros o solicitar al administrador que revise sus asignaciones.'} action={<Btn onClick={clean}>Limpiar filtros</Btn>} />}
+        {!loading && !error && rows.length === 0 && <Empty title="Sin resultados" text={isAdmin ? 'No hay garantías que coincidan con los filtros aplicados. Pruebe con otro RUT, nombre o amplíe los estados visibles.' : 'No hay garantías de sus reglas de asignación que coincidan con los filtros. Puede limpiar los filtros o solicitar al administrador que revise sus asignaciones.'} action={<Btn onClick={clean}>Limpiar filtros</Btn>} />}
         {!loading && !error && pagination.total > 0 && <div className="flex items-center justify-between border-t border-line px-4 py-3 text-sm text-muted">
           <span>Mostrando {(pagination.page - 1) * pagination.limit + 1}–{Math.min(pagination.total, pagination.page * pagination.limit)} de {pagination.total}</span>
           <div className="flex items-center gap-2"><Btn onClick={() => setPage((value) => Math.max(1, value - 1))} disabled={pagination.page <= 1} className="!px-2 !py-1.5"><ChevronLeft className="size-4" /></Btn><span className="tnum">Página {pagination.page} de {pagination.totalPages}</span><Btn onClick={() => setPage((value) => Math.min(pagination.totalPages, value + 1))} disabled={pagination.page >= pagination.totalPages} className="!px-2 !py-1.5"><ChevronRight className="size-4" /></Btn></div>

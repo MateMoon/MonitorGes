@@ -125,6 +125,50 @@ describe("envío manual explícito de una sola cuenta", () => {
 });
 
 describe("aislamiento del contenido individual", () => {
+  it("aplica las mismas combinaciones de problema, establecimiento y tipo antes de formatear texto y HTML", async () => {
+    users = new Map([["a", user("a", [], { reglasAsignacion: [
+      { problemaSalud: "diabetes", establecimiento: "centro norte", tipoGarantia: "consulta" },
+      { problemaSalud: "hipertension", establecimiento: "centro sur", tipoGarantia: "tratamiento" },
+    ] })]]);
+    rows = [
+      { ...row("111", "CONSÚLTA!!!"), problemaSalud: "DIÁBETES", responsable: "Centro Norte" },
+      { ...row("222", "Tratamiento"), problemaSalud: "Hipertensión", responsable: "Centro Sur" },
+      { ...row("333", "Consulta"), problemaSalud: "Hipertensión", responsable: "Centro Norte" },
+      { ...row("444", "Consulta"), problemaSalud: "Diabetes", responsable: "Centro Sur" },
+      { ...row("555", "Tratamiento"), problemaSalud: "Diabetes", responsable: "Centro Norte" },
+    ];
+    const send = vi.fn().mockResolvedValue({});
+    expect(await run({ send })).toMatchObject({ aceptadosSmtp: 1 });
+    for (const body of [send.mock.calls[0][0].text, send.mock.calls[0][0].html]) {
+      expect(body).toContain("Paciente 111"); expect(body).toContain("Paciente 222");
+      for (const id of ["333", "444", "555"]) expect(body).not.toContain(`Paciente ${id}`);
+    }
+  });
+  it("permite cualquier tipo en una regla y omite cuentas sin reglas aunque conserven tipos anteriores", async () => {
+    users = new Map([["a", user("a", [], { reglasAsignacion: [{ problemaSalud: "diabetes", establecimiento: "", tipoGarantia: "" }] })]]);
+    rows = rows.map((entry) => ({ ...entry, problemaSalud: "Diabetes" }));
+    const send = vi.fn().mockResolvedValue({});
+    await run({ send }); expect(send).toHaveBeenCalledTimes(1);
+    expect(records.get(`a:${date}`)?.outcome?.cantidadGarantias).toBe(3);
+    users = new Map([["a", user("a", ["consulta"], { reglasAsignacion: [] })]]);
+    expect(await run({ send })).toMatchObject({ omitidos: 1 });
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+  it("cambiar problema o establecimiento invalida la reserva previa y el orden de reglas no altera la huella", async () => {
+    const rules = [{ problemaSalud: "diabetes", establecimiento: "centro norte", tipoGarantia: "consulta" }, { problemaSalud: "hipertension", establecimiento: "", tipoGarantia: "tratamiento" }];
+    const current = user("a", [], { reglasAsignacion: rules });
+    expect(configurationFingerprint(current)).toBe(configurationFingerprint({ ...current, reglasAsignacion: [...rules].reverse() }));
+    expect(configurationFingerprint(current)).not.toBe(configurationFingerprint({ ...current, reglasAsignacion: [{ ...rules[0], establecimiento: "centro sur" }] }));
+    users = new Map([["a", current]]);
+    const original = store.withLockedRecipient;
+    store.withLockedRecipient = (claim, work) => {
+      users.set("a", { ...current, reglasAsignacion: [{ ...rules[0], problemaSalud: "hipertension" }] });
+      return original(claim, work);
+    };
+    const send = vi.fn(); await run({ send });
+    expect(send).not.toHaveBeenCalled();
+    expect(records.get(`a:${date}`)?.outcome?.codigoResultado).toBe("CONFIGURACION_CAMBIADA");
+  });
   it("A y B reciben solo sus tipos; C comparte consulta sin un correo colectivo", async () => {
     const send = vi.fn().mockResolvedValue({ messageId: "smtp-test" });
     expect(await run({ send })).toMatchObject({ aceptadosSmtp: 3 });

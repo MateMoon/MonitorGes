@@ -7,6 +7,7 @@ export default function UserModal({
   description,
   dirty = false,
   busy = false,
+  wide = false,
   onClose,
   children,
 }: {
@@ -14,6 +15,7 @@ export default function UserModal({
   description?: string
   dirty?: boolean
   busy?: boolean
+  wide?: boolean
   onClose: () => void
   children: ReactNode
 }) {
@@ -64,7 +66,7 @@ export default function UserModal({
       ref={dialog}
       aria-labelledby={`${id}-title`}
       aria-describedby={description ? `${id}-description` : undefined}
-      className="fixed inset-0 m-auto max-h-[90dvh] w-[calc(100%-2rem)] max-w-2xl overflow-y-auto rounded-xl border border-line bg-white p-0 text-ink shadow-xl backdrop:bg-ink/40 backdrop:backdrop-blur-sm"
+      className={`fixed inset-0 m-auto max-h-[90dvh] w-[calc(100%-2rem)] ${wide ? "max-w-4xl" : "max-w-2xl"} overflow-y-auto rounded-xl border border-line bg-white p-0 text-ink shadow-xl backdrop:bg-ink/40 backdrop:backdrop-blur-sm`}
       onCancel={(event) => {
         event.preventDefault()
         if (confirmDiscard) resume()

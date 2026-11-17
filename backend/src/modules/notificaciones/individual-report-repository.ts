@@ -1,15 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../../db/prisma.js";
-import { matchingGuaranteeNames } from "../garantias/assignment-scope.js";
+import { matchingGuaranteeNames, assignmentScopeForRules } from "../garantias/assignment-scope.js";
+import { legacyAssignmentRules, readAssignmentRules, type AssignmentRule } from "../garantias/assignment-rules.js";
 export { matchingGuaranteeNames } from "../garantias/assignment-scope.js";
 import { ABANDONED_EMAIL_ATTEMPT_MS, EMAIL_RETRY_DELAY_MS, MAX_EMAIL_ATTEMPTS, isStoredFailureTransient } from "./email-retry-policy.js";
 import { configurationFingerprint, recipientEligibility, type IndividualClaim, type IndividualOutcome, type IndividualRecipient, type IndividualReportStore } from "./individual-report-service.js";
 import type { ReportGuarantee } from "./report-service.js";
 
-const recipientSelect = { id: true, email: true, activo: true, recibirInformeAutomatico: true, tiposGarantia: { select: { claveNormalizada: true } } } as const;
+const recipientSelect = { id: true, email: true, activo: true, recibirInformeAutomatico: true, reglasAsignacion: true, tiposGarantia: { select: { claveNormalizada: true } } } as const;
 type RecipientRow = Prisma.UsuarioGetPayload<{ select: typeof recipientSelect }>;
-const recipient = (row: RecipientRow | null): IndividualRecipient | null => row ? { id: row.id, email: row.email, activo: row.activo, recibirInformeAutomatico: row.recibirInformeAutomatico, tipos: row.tiposGarantia.map((type) => type.claveNormalizada) } : null;
+const recipient = (row: RecipientRow | null): IndividualRecipient | null => row ? { id: row.id, email: row.email, activo: row.activo, recibirInformeAutomatico: row.recibirInformeAutomatico, tipos: row.tiposGarantia.map((type) => type.claveNormalizada), reglasAsignacion: readAssignmentRules(row.reglasAsignacion) ?? legacyAssignmentRules(row.tiposGarantia.map((type) => type.claveNormalizada)) } : null;
 const dateValue = (date: string) => new Date(`${date}T00:00:00.000Z`);
 
 export function individualGuaranteeWhere(date: string, names: string[]): Prisma.GarantiaWhereInput {
@@ -17,12 +18,16 @@ export function individualGuaranteeWhere(date: string, names: string[]): Prisma.
   limit.setUTCDate(limit.getUTCDate() + 30);
   return { estadoGestion: { not: "CUMPLIDA" }, fechaLimite: { lte: limit }, nombreGarantia: { in: names } };
 }
-async function loadRows(tx: Prisma.TransactionClient, keys: string[], date: string): Promise<ReportGuarantee[]> {
-  const names = await matchingGuaranteeNames(tx, keys);
-  if (!names.length) return [];
+async function reportWhere(tx: Prisma.TransactionClient, keys: string[], date: string, rules?: AssignmentRule[]): Promise<Prisma.GarantiaWhereInput> {
+  const scope = rules !== undefined ? await assignmentScopeForRules(rules, tx) : { nombreGarantia: { in: await matchingGuaranteeNames(tx, keys) } };
+  const limit = dateValue(date);
+  limit.setUTCDate(limit.getUTCDate() + 30);
+  return { AND: [scope], estadoGestion: { not: "CUMPLIDA" }, fechaLimite: { lte: limit } };
+}
+async function loadRows(tx: Prisma.TransactionClient, keys: string[], date: string, rules?: AssignmentRule[]): Promise<ReportGuarantee[]> {
   const rows = await tx.garantia.findMany({
-    where: individualGuaranteeWhere(date, names),
-    select: { id: true, nombreGarantia: true, fechaLimite: true, responsable: true, paciente: { select: { rutNumero: true, dv: true, nombre: true } } },
+    where: await reportWhere(tx, keys, date, rules),
+    select: { id: true, problemaSalud: true, nombreGarantia: true, fechaLimite: true, responsable: true, paciente: { select: { rutNumero: true, dv: true, nombre: true } } },
   });
   return rows.map(({ paciente, ...row }) => ({ ...row, rut: `${paciente.rutNumero}-${paciente.dv}`, nombrePaciente: paciente.nombre, fechaLimite: row.fechaLimite.toISOString().slice(0, 10) }));
 }
@@ -41,7 +46,7 @@ export function createIndividualReportStore(options: { claveEjecucion: string; d
   async candidates(date) {
     const rows = await prisma.usuario.findMany({
       where: { OR: [
-        { activo: true, recibirInformeAutomatico: true, tiposGarantia: { some: {} } },
+        { activo: true, recibirInformeAutomatico: true },
         { informesIndividuales: { some: { fechaInforme: dateValue(date), claveEjecucion, estado: { in: ["RESERVADO", "EN_PROCESO", "FALLIDO"] } } } },
       ] },
       select: { id: true }, orderBy: { id: "asc" },
@@ -124,7 +129,7 @@ export function createIndividualReportStore(options: { claveEjecucion: string; d
       const current = await tx.envioInformeIndividual.findUnique({ where: { id: claim.id } });
       if (!current || current.tokenReserva !== claim.tokenReserva || current.estado !== "EN_PROCESO" || current.intentos !== claim.numero) throw new Error("RESERVA_NO_DISPONIBLE");
       const user = recipient(await tx.usuario.findUnique({ where: { id: claim.usuarioId }, select: recipientSelect }));
-      const result = await work(user, (keys) => loadRows(tx, keys, claim.fechaInforme));
+      const result = await work(user, (keys) => loadRows(tx, keys, claim.fechaInforme, user?.reglasAsignacion));
       await finish(tx, claim.id, claim.numero, result);
       return result;
     }, { timeout: 120_000, maxWait: 10_000 });
@@ -159,18 +164,17 @@ export async function previewIndividualReports(date: string) {
       let reason = recipientEligibility(user);
       let count = 0;
       if (!reason) {
-        const names = await matchingGuaranteeNames(tx, user.tipos);
-        if (names.length) count = await tx.garantia.count({ where: individualGuaranteeWhere(date, names) });
+        count = await tx.garantia.count({ where: await reportWhere(tx, user.tipos, date, user.reglasAsignacion) });
         if (!count) reason = "SIN_GARANTIAS_ELEGIBLES";
       }
-      rows.push({ indice: index + 1, tiposAsignados: user.tipos.length, garantias: count, enviaria: !reason, motivo: reason });
+      rows.push({ indice: index + 1, tiposAsignados: user.tipos.length, reglasAsignadas: user.reglasAsignacion?.length ?? user.tipos.length, garantias: count, enviaria: !reason, motivo: reason });
     }
     return { fechaInforme: date, usuarios: rows, correosPrevistos: rows.filter((row) => row.enviaria).length, garantiasEnInformes: rows.reduce((sum, row) => sum + row.garantias, 0), simulacion: true, alcance: "Elegibilidad y contenido; no simula reservas ni horario. No realiza envíos." };
   }, { timeout: 30000, isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
 }
 
 // Inspección operativa para elegir y autorizar UN destinatario. No lee pacientes,
-// no crea reservas y no conecta SMTP. La huella vincula la confirmación a sus tipos.
+// no crea reservas y no conecta SMTP. La huella vincula la confirmación a sus reglas.
 export async function inspectManualIndividualRecipients(date: string, usuarioId?: string) {
   return prisma.$transaction(async (tx) => {
     await tx.$executeRawUnsafe("SET TRANSACTION READ ONLY");
@@ -181,15 +185,14 @@ export async function inspectManualIndividualRecipients(date: string, usuarioId?
       let reason = recipientEligibility(user);
       let count = 0;
       if (!reason) {
-        const names = await matchingGuaranteeNames(tx, user.tipos);
-        if (names.length) count = await tx.garantia.count({ where: individualGuaranteeWhere(date, names) });
+        count = await tx.garantia.count({ where: await reportWhere(tx, user.tipos, date, user.reglasAsignacion) });
         if (!count) reason = "SIN_GARANTIAS_ELEGIBLES";
       }
       const history = await tx.envioInformeIndividual.findFirst({
         where: { usuarioId: user.id, fechaInforme: dateValue(date) }, orderBy: { createdAt: "desc" },
         select: { claveEjecucion: true, estado: true, intentos: true, codigoResultado: true, cantidadGarantias: true, reintentable: true, messageId: true, aceptadoSmtpAt: true },
       });
-      results.push({ usuarioId: user.id, destinatario: user.email.trim().toLowerCase(), tiposAsignados: user.tipos.length, garantias: count, motivo: reason, huellaConfiguracion: configurationFingerprint(user), historialHoy: history });
+      results.push({ usuarioId: user.id, destinatario: user.email.trim().toLowerCase(), tiposAsignados: user.tipos.length, reglasAsignadas: user.reglasAsignacion?.length ?? user.tipos.length, garantias: count, motivo: reason, huellaConfiguracion: configurationFingerprint(user), historialHoy: history });
     }
     return results;
   }, { timeout: 30000, isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });

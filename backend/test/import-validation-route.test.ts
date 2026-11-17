@@ -8,7 +8,7 @@ vi.mock("../src/db/prisma.js", () => ({
     garantia: { count: db.read, findMany: db.read, findUnique: db.read, create: db.write, update: db.write, delete: db.write, upsert: db.write },
     paciente: { findUnique: db.read, create: db.write, update: db.write, delete: db.write, upsert: db.write },
     importacion: { findFirst: db.read, create: db.write, update: db.write, delete: db.write },
-    usuario: { findMany: db.read },
+    usuario: { findMany: db.read, findUnique: vi.fn(async () => ({ reglasAsignacion: [] })) },
     usuarioTipoGarantia: { findMany: db.read },
   },
 }));

@@ -33,6 +33,10 @@ try {
   const executionApplied = spawnSync(process.env.GES_TEST_PSQL!, ["-X", "-h", "127.0.0.1", "-p", url.port, "-U", "ges_test", "-d", "ges_individual_reports_isolated", "-v", "ON_ERROR_STOP=1", "-f", fileURLToPath(executionMigration)], { windowsHide: true, encoding: "utf8" });
   assert.equal(executionApplied.status, 0, "La migración de claves de ejecución se aplica en el clúster aislado.");
 
+  const ruleMigration = new URL("../20261117120000_user_assignment_rules/migration.sql", migration);
+  const rulesApplied = spawnSync(process.env.GES_TEST_PSQL!, ["-X", "-h", "127.0.0.1", "-p", url.port, "-U", "ges_test", "-d", "ges_individual_reports_isolated", "-v", "ON_ERROR_STOP=1", "-f", fileURLToPath(ruleMigration)], { windowsHide: true, encoding: "utf8" });
+  assert.equal(rulesApplied.status, 0, "Se aplica la migración de reglas de asignación.");
+
   const { normalizeIdentityText } = await import("../src/modules/importaciones/identity-normalization.js");
   for (const nombre of ["Consulta de especialidad", "Tratamiento", "Confirmación diagnóstica"]) await prisma.nombreGarantiaAsignable.create({ data: { nombre, claveNormalizada: normalizeIdentityText(nombre) } });
   const { hashPassword } = await import("../src/modules/auth/auth-service.js");
@@ -231,5 +235,19 @@ try {
   await assert.rejects(deliverDailyReport({ mailer }), /GLOBAL_REPORT_DISABLED/);
   await assert.rejects(sendManualConfiguredReport({ mailer }), /GLOBAL_REPORT_DISABLED/);
   check(JSON.stringify(await prisma.envioInformeCorreo.findMany({ include: { intentosDetalle: true } })) === legacyBefore && (await prisma.envioInformeCorreo.findUniqueOrThrow({ where: { id: old.id } })).messageId === "historical-only", "Los informes individuales no alteran el historial global anterior.");
+  const ruleUser = await makeUser("rules", [], { reglasAsignacion: [{ problemaSalud: "diabetes", establecimiento: "centro norte", tipoGarantia: "consulta de especialidad" }] });
+  for (const [index, [problem, establishment]] of [["Diabetes", "Centro Norte"], ["Diabetes", "Centro Sur"], ["Hipertensión", "Centro Norte"]].entries()) {
+    const patient = await prisma.paciente.create({ data: { rutNumero: String(22222220 + index), dv: "5", nombre: `Paciente regla ${index}` } });
+    await prisma.garantia.create({ data: { pacienteId: patient.id, problemaSalud: problem, responsable: establishment, nombreGarantia: "Consulta de especialidad", fechaInicio: new Date("2026-10-01"), fechaLimite: new Date("2026-11-25") } });
+  }
+  const rulePreview = await inspectManualIndividualRecipients("2026-11-20", ruleUser.id);
+  check(rulePreview[0].garantias === 1, "La vista previa SQL respeta problema, establecimiento y tipo.");
+  const ruleStore = { ...individualReportStore, candidates: async () => [ruleUser.id] };
+  const beforeRules = messages.length;
+  await run("2026-11-20", ruleStore);
+  check(messages.length === beforeRules + 1 && messages.at(-1)!.to === ruleUser.email, "Se genera un informe independiente para la cuenta con reglas.");
+  for (const body of [messages.at(-1)!.text, messages.at(-1)!.html!]) check(body.includes("Paciente regla 0") && !body.includes("Paciente regla 1") && !body.includes("Paciente regla 2"), "El informe excluye problemas y establecimientos ajenos.");
+  await prisma.usuario.update({ where: { id: ruleUser.id }, data: { reglasAsignacion: [] } });
+  check((await inspectManualIndividualRecipients("2026-11-21", ruleUser.id))[0].garantias === 0, "Una cuenta sin reglas no recibe garantías anteriores.");
   console.info(JSON.stringify({ ok: true, checks, database: "ges_individual_reports_isolated", smtp: "doble local, sin envío real", qa: "sin acceso", globalHistoryPreserved: true }));
 } finally { await prisma.$disconnect(); }

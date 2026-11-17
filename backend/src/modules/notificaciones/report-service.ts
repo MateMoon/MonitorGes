@@ -9,6 +9,7 @@ export interface ReportGuarantee {
   nombrePaciente: string;
   fechaLimite: string;
   responsable: string;
+  problemaSalud?: string;
 }
 
 export interface ReportRow extends ReportGuarantee {

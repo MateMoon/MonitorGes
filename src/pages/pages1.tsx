@@ -85,7 +85,7 @@ export function Dashboard({ nav, isAdmin = false }: { nav: Nav; isAdmin?: boolea
       <div className="flex items-end justify-between">
         <div>
           <h2 className="text-2xl font-semibold">Resumen de garantías</h2>
-          <p className="mt-1 text-sm text-muted">{isAdmin ? 'Vista general de todas las garantías.' : 'Resumen de los tipos de garantías asignados a su usuario.'}</p>
+          <p className="mt-1 text-sm text-muted">{isAdmin ? 'Vista general de todas las garantías.' : 'Resumen de las garantías que coinciden con sus reglas de asignación.'}</p>
           <p className="mt-1 flex items-center gap-1.5 text-sm text-muted"><Clock className="size-3.5" />Última actualización de nómina: <span className="font-medium text-ink">{dashboard?.ultimaImportacion ? new Intl.DateTimeFormat('es-CL', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(dashboard.ultimaImportacion.fechaImportacion)) : loading ? 'Cargando…' : 'Sin importaciones registradas'}</span></p>
         </div>
         <Btn variant="primary" onClick={() => nav('importar')}><FileSpreadsheet className="size-4" />Importar nómina</Btn>

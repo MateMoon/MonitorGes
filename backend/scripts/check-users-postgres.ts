@@ -78,6 +78,10 @@ try {
     legacyBefore,
   )
 
+  const ruleMigration = new URL("../20261117120000_user_assignment_rules/migration.sql", migration)
+  const rulesApplied = spawnSync(process.env.GES_TEST_PSQL!, ["-X", "-h", "127.0.0.1", "-p", connection.port, "-U", "ges_test", "-d", "ges_users_isolated", "-v", "ON_ERROR_STOP=1", "-f", fileURLToPath(ruleMigration)], { windowsHide: true, encoding: "utf8" })
+  assert.equal(rulesApplied.status, 0, "Se aplica la migración de reglas de asignación.")
+
   const {
     createManagedUser,
     updateManagedUser,
@@ -380,6 +384,20 @@ try {
   assert.equal(summary.informesHabilitados, 2)
   assert.equal(await prisma.envioInformeCorreo.count(), 0)
   assert.equal(await prisma.configuracionNotificaciones.count(), 0)
+  const { guaranteeScopeFor, canAccessGuarantee } = await import("../src/modules/garantias/assignment-scope.js")
+  const { listAssignmentOptions } = await import("../src/modules/usuarios/repository.js")
+  const assignmentOptions = await listAssignmentOptions()
+  assert.ok(assignmentOptions.establecimientos.some((option) => option.claveNormalizada === "centro de origen"))
+  const rules = [{ problemaSalud: "problema de prueba", establecimiento: "centro de origen", tipoGarantia: "consulta de especialidad" }]
+  const scopedUser = await updateManagedUser(first.id, edit(await getUser(first.id), { reglasAsignacion: rules }))
+  assert.deepEqual(scopedUser.reglasAsignacion, rules)
+  const visible = await prisma.garantia.findMany({ where: await guaranteeScopeFor(scopedUser) })
+  assert.equal(visible.length, 1, "PostgreSQL combina los tres criterios de la regla.")
+  const foreign = await prisma.garantia.create({ data: { pacienteId: patient.id, problemaSalud: "Problema de prueba", nombreGarantia: "Consulta de especialidad", responsable: "Otro establecimiento", fechaInicio: new Date("2026-01-01"), fechaLimite: new Date("2026-11-01") } })
+  assert.equal(await canAccessGuarantee(scopedUser, foreign), false)
+  assert.equal(await prisma.garantia.count({ where: await guaranteeScopeFor(scopedUser) }), 1)
+  await updateManagedUser(first.id, edit(scopedUser, { reglasAsignacion: [] }))
+  assert.equal(await prisma.garantia.count({ where: await guaranteeScopeFor(scopedUser) }), 0, "Quitar todas las reglas no reactiva tipos anteriores.")
   console.info(
     "PostgreSQL aislado: migración con nombres anteriores, nombres separados, unicidad, relaciones múltiples, persistencia, eliminación de selecciones, rollback real, preferencias, sesiones, antecedentes y protección concurrente del último ADMIN verificados. Sin SMTP ni escrituras en QA.",
   )

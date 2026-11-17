@@ -132,6 +132,7 @@ model Usuario {
   areasCreadas   AreaResponsabilidad[] @relation("AreaCreador")
   areasActualizadas AreaResponsabilidad[] @relation("AreaActualizador")
   tiposGarantia  UsuarioTipoGarantia[]
+  reglasAsignacion Json?
   informesIndividuales EnvioInformeIndividual[]
 }
 

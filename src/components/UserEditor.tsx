@@ -1,16 +1,18 @@
-import { useId, useRef, useState, type FormEvent } from "react"
+import { useId, useState, type FormEvent } from "react"
 import { Loader2 } from "lucide-react"
 import { ApiError } from "../services/api"
 import {
   createUser,
   updateUser,
-  type GuaranteeTypeOption,
+  type AssignmentOptions,
+  userAssignmentRules,
   type ManagedUser,
   type UserRole,
 } from "../services/usuarios"
 import { Btn, inputCls } from "../ui"
-import GuaranteeTypeCombobox from "./GuaranteeTypeCombobox"
+import UserAssignmentRules from "./UserAssignmentRules"
 import UserModal from "./UserModal"
+import { assignmentGroupsFromRules, expandAssignmentGroups, isEmptyAssignmentGroup } from "../services/assignment-groups"
 
 export default function UserEditor({
   user,
@@ -19,11 +21,11 @@ export default function UserEditor({
   onSaved,
 }: {
   user?: ManagedUser
-  options: GuaranteeTypeOption[]
+  options: AssignmentOptions
   onClose: () => void
   onSaved: (user: ManagedUser) => void
 }) {
-  const initial = useRef({
+  const [initial] = useState(() => ({
     nombre: user?.nombres ?? user?.nombre ?? "",
     apellido: user?.apellido ?? "",
     email: user?.email ?? "",
@@ -33,16 +35,15 @@ export default function UserEditor({
     puedeCargarNominas: user?.puedeCargarNominas ?? false,
     recibirInformeAutomatico: user?.recibirInformeAutomatico ?? false,
     activo: user?.activo ?? true,
-    tiposGarantia:
-      user?.tiposGarantia.map((type) => type.claveNormalizada) ?? [],
-  })
-  const [form, setForm] = useState(initial.current)
+    gruposAsignacion: assignmentGroupsFromRules(userAssignmentRules(user)),
+  }))
+  const [form, setForm] = useState(initial)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [fields, setFields] = useState<Record<string, string>>({})
   const [confirmDeactivation, setConfirmDeactivation] = useState(false)
   const id = useId()
-  const dirty = JSON.stringify(form) !== JSON.stringify(initial.current)
+  const dirty = JSON.stringify(form) !== JSON.stringify(initial)
   const change = <K extends keyof typeof form,>(
     key: K,
     value: typeof form[K],
@@ -79,6 +80,10 @@ export default function UserEditor({
         "Usa de 3 a 100 letras, números, puntos, guiones o guiones bajos."
     if (!user && (form.password.length < 8 || form.password.length > 128))
       errors.password = "La contraseña debe tener entre 8 y 128 caracteres."
+    if (form.gruposAsignacion.length > 1 && form.gruposAsignacion.some(isEmptyAssignmentGroup))
+      errors.reglasAsignacion = "Selecciona al menos un criterio en cada grupo o elimina el grupo vacío."
+    if (expandAssignmentGroups(form.gruposAsignacion).exceedsLimit)
+      errors.reglasAsignacion = "La selección supera las 1000 combinaciones permitidas. Reduce las opciones seleccionadas."
     setFields(errors)
     if (Object.keys(errors).length) {
       setError("Revisa los campos indicados.")
@@ -107,7 +112,7 @@ export default function UserEditor({
           : form.puedeCargarNominas,
       recibirInformeAutomatico: form.recibirInformeAutomatico,
       activo: form.activo,
-      tiposGarantia: form.tiposGarantia,
+      reglasAsignacion: expandAssignmentGroups(form.gruposAsignacion).rules,
     }
     try {
       const result = user
@@ -152,6 +157,7 @@ export default function UserEditor({
   }
   return (
     <UserModal
+      wide
       title={user ? "Editar usuario" : "Nuevo usuario"}
       description={
         user
@@ -267,17 +273,19 @@ export default function UserEditor({
             </select>
             {fieldError("rol")}
           </div>
-          <GuaranteeTypeCombobox
-            options={options}
-            selected={form.tiposGarantia}
-            onChange={(values) => change("tiposGarantia", values)}
-            disabled={busy}
-          />
-          {fieldError("tiposGarantia")}
+          <div {...attrs("reglasAsignacion")} role="group" tabIndex={-1}>
+            <UserAssignmentRules
+              options={options}
+              groups={form.gruposAsignacion}
+              onChange={(values) => change("gruposAsignacion", values)}
+              disabled={busy}
+            />
+            {fieldError("reglasAsignacion")}
+          </div>
           <p className="text-xs text-muted">
             {form.rol === "ADMIN"
-              ? "El administrador ve todas las garantías. Estos tipos delimitan sus informes por correo."
-              : "Estos tipos delimitan las garantías visibles en Dashboard y Garantías, y sus informes por correo. Sin tipos asignados no verá garantías."}
+              ? "El administrador ve todas las garantías. Estas reglas delimitan sus informes por correo."
+              : "Cada grupo incluye todas las combinaciones de los problemas, establecimientos y tipos seleccionados. Verá las coincidencias en Dashboard, Garantías e informes por correo. Sin asignaciones no verá garantías."}
           </p>
           <div className="space-y-3 rounded-lg border border-line p-4">
             <p className="text-sm font-semibold">Permisos y estado</p>
@@ -317,7 +325,7 @@ export default function UserEditor({
               <span>Recibir informe automático por correo</span>
             </label>
             <p className="text-xs text-muted">
-              Recibirá únicamente garantías de los tipos seleccionados si la cuenta
+              Recibirá únicamente garantías que coincidan con sus reglas si la cuenta
               está activa y el envío automático está habilitado. Se utilizará el correo
               de esta cuenta. Guardar la configuración no envía un correo.
             </p>
@@ -390,7 +398,7 @@ export default function UserEditor({
           >
             <p>
               ¿Desactivar este usuario? Se cerrarán sus sesiones y se
-              conservarán sus antecedentes y tipos de garantías.
+              conservarán sus antecedentes y reglas de asignación.
             </p>
             <div className="mt-3 flex gap-2">
               <Btn

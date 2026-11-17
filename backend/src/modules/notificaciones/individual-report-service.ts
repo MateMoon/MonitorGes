@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { normalizeIdentityText } from "../importaciones/identity-normalization.js";
+import { legacyAssignmentRules, matchesAssignmentRules, readAssignmentRules, type AssignmentRule } from "../garantias/assignment-rules.js";
 import { buildGuaranteeReport, formatGuaranteeReport, formatGuaranteeReportHtml, type ReportGuarantee, type ReportMailer } from "./report-service.js";
 import { isTransientEmailFailure, serializeEmailFailureCode } from "./email-retry-policy.js";
 
@@ -10,17 +11,23 @@ export interface IndividualRecipient {
   activo: boolean;
   recibirInformeAutomatico: boolean;
   tipos: string[];
+  reglasAsignacion?: AssignmentRule[];
 }
 const mailbox = z.string().trim().email().max(254);
 export function recipientEligibility(user: IndividualRecipient | null): string | null {
   if (!user || !user.activo) return "CUENTA_INACTIVA";
   if (!user.recibirInformeAutomatico) return "RECEPCION_DESHABILITADA";
   if (!mailbox.safeParse(user.email).success) return "CORREO_INVALIDO";
-  if (!user.tipos.length || user.tipos.some((key) => !key || normalizeIdentityText(key) !== key)) return "SIN_TIPOS_VALIDOS";
+  if (user.reglasAsignacion !== undefined) {
+    if (!user.reglasAsignacion.length || readAssignmentRules(user.reglasAsignacion)?.length !== user.reglasAsignacion.length) return "SIN_REGLAS_VALIDAS";
+  } else if (!user.tipos.length || user.tipos.some((key) => !key || normalizeIdentityText(key) !== key)) return "SIN_TIPOS_VALIDOS";
   return null;
 }
 export function configurationFingerprint(user: IndividualRecipient): string {
-  return createHash("sha256").update(JSON.stringify({ email: user.email.trim().toLowerCase(), tipos: [...new Set(user.tipos)].sort() })).digest("hex");
+  const scope = user.reglasAsignacion !== undefined
+    ? { reglas: [...new Set(user.reglasAsignacion.map((rule) => JSON.stringify([rule.problemaSalud, rule.establecimiento, rule.tipoGarantia])))].sort() }
+    : { tipos: [...new Set(user.tipos)].sort() };
+  return createHash("sha256").update(JSON.stringify({ email: user.email.trim().toLowerCase(), ...scope })).digest("hex");
 }
 export interface IndividualClaim {
   id: string;
@@ -83,9 +90,9 @@ export async function deliverIndividualReports(options: {
         if (configurationFingerprint(current!) !== currentClaim.huellaConfiguracion || current!.email.trim().toLowerCase() !== currentClaim.destinatario) {
           return { estado: "OMITIDO", cantidadGarantias: 0, codigoResultado: "CONFIGURACION_CAMBIADA" };
         }
-        const allowedKeys = new Set(current!.tipos);
         // Defensa adicional a la consulta SQL filtrada. Nunca se formatea un informe global.
-        const rows = (await loadRows(current!.tipos)).filter((row) => allowedKeys.has(normalizeIdentityText(row.nombreGarantia)));
+        const rules = current!.reglasAsignacion ?? legacyAssignmentRules(current!.tipos);
+        const rows = (await loadRows(current!.tipos)).filter((row) => matchesAssignmentRules(row, rules));
         const report = buildGuaranteeReport(rows, options.fechaInforme);
         if (!report.length) return { estado: "OMITIDO", cantidadGarantias: 0, codigoResultado: "SIN_GARANTIAS_ELEGIBLES" };
         try {

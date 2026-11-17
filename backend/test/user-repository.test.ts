@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => {
       count: vi.fn(),
     },
     tipoGarantia: { findMany: vi.fn() },
+    problemaSalud: { findMany: vi.fn() },
+    establecimiento: { findMany: vi.fn() },
     garantia: { findMany: vi.fn() },
     nombreGarantiaAsignable: { findMany: vi.fn(), upsert: vi.fn() },
     usuarioTipoGarantia: { deleteMany: vi.fn(), createMany: vi.fn() },
@@ -60,9 +62,27 @@ beforeEach(() => {
     { nombreGarantia: "Confirmación diagnóstica" },
   ])
   mocks.tx.nombreGarantiaAsignable.findMany.mockResolvedValue([])
+  mocks.tx.problemaSalud.findMany.mockResolvedValue([{ nombre: "Diabetes" }])
+  mocks.tx.establecimiento.findMany.mockResolvedValue([{ nombre: "Centro Norte" }])
 })
 
 describe("servicio persistente de usuarios y nombres de garantías", () => {
+  it("guarda y deduplica las reglas junto con el usuario sin alterar las asignaciones omitidas", async () => {
+    mocks.tx.garantia.findMany.mockResolvedValue([])
+    const rule = { problemaSalud: "diabetes", establecimiento: "centro norte", tipoGarantia: "tratamiento" }
+    await updateManagedUser(user.id, updateSchema.parse({ ...input, reglasAsignacion: [rule, rule] }))
+    expect(mocks.tx.usuario.update).toHaveBeenLastCalledWith({ where: { id: user.id }, data: { reglasAsignacion: [rule] }, select: { id: true } })
+    expect(mocks.tx.usuarioTipoGarantia.deleteMany).not.toHaveBeenCalled()
+  })
+
+  it("rechaza reglas inventadas y filas vacías; un conjunto vacío sí revoca asignaciones", async () => {
+    mocks.tx.garantia.findMany.mockResolvedValue([])
+    await expect(updateManagedUser(user.id, updateSchema.parse({ ...input, reglasAsignacion: [{ problemaSalud: "inventado", establecimiento: "", tipoGarantia: "" }] }))).rejects.toMatchObject({ code: "INVALID_ASSIGNMENT_RULE" })
+    expect(updateSchema.safeParse({ ...input, reglasAsignacion: [{ problemaSalud: "", establecimiento: "", tipoGarantia: "" }] }).success).toBe(false)
+    await updateManagedUser(user.id, updateSchema.parse({ ...input, reglasAsignacion: [] }))
+    expect(mocks.tx.usuario.update).toHaveBeenLastCalledWith({ where: { id: user.id }, data: { reglasAsignacion: [] }, select: { id: true } })
+  })
+
   it("combina catálogo y nóminas con la identidad del importador sin usar combinaciones", async () => {
     expect(await listGuaranteeTypes()).toEqual([
       {

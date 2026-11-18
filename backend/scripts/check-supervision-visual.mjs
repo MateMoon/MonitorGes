@@ -41,7 +41,10 @@ try {
   });
   const { data: original } = await supervision.getSupervisionSummary();
   const summary = structuredClone(original);
-  summary.prioritarios.forEach((row, index) => { row.paciente = { nombre: `Caso ${index + 1} · identidad reservada` }; });
+  summary.prioritarios.forEach((row, index) => {
+    row.paciente = { nombre: `Caso ${index + 1} · identidad reservada` };
+    row.profesionalesCoincidentes.forEach((professional) => { professional.nombre = "Funcionario de revisión visual con nombre extenso"; });
+  });
   summary.distribuciones.porProfesional.forEach((row, index) => { row.nombre = `Profesional ${index + 1}`; });
   let activity = null;
   if (process.argv.includes("--activity") && supervision.getSupervisionActivity) {

@@ -35,8 +35,8 @@ const summary = {
     porProfesional: [{ usuarioId: "one", nombre: "Profesional de prueba A", cantidad: 46 }, { usuarioId: "two", nombre: "Profesional de prueba B", cantidad: 37 }],
   },
   prioritarios: [
-    { id: caseId, paciente: { nombre: "Caso sintético uno" }, problemaSalud: "Diabetes", nombreGarantia: "Tratamiento", establecimiento: "Centro Norte", fechaLimite: "2026-11-17", estadoGestion: "EN_GESTION", estadoVencimiento: "vencida", diasRestantes: -1, cantidadProfesionalesCoincidentes: 2, motivosPrioridad: ["VENCIDA"], prioridad: 1 },
-    { id: "00000000-0000-4000-8000-000000000002", paciente: { nombre: "Caso sintético dos" }, problemaSalud: "Hipertensión", nombreGarantia: "Diagnóstico", establecimiento: "Centro Sur", fechaLimite: "2026-12-28", estadoGestion: "SIN_GESTION", estadoVencimiento: "normal", diasRestantes: 40, cantidadProfesionalesCoincidentes: 0, motivosPrioridad: ["SIN_PROFESIONAL_ACTIVO"], prioridad: 3 },
+    { id: caseId, paciente: { nombre: "Caso sintético uno" }, problemaSalud: "Diabetes", nombreGarantia: "Tratamiento", establecimiento: "Centro Norte", fechaLimite: "2026-11-17", estadoGestion: "EN_GESTION", estadoVencimiento: "vencida", diasRestantes: -1, cantidadProfesionalesCoincidentes: 2, profesionalesCoincidentes: [{ usuarioId: "one", nombre: "Profesional de prueba A" }, { usuarioId: "two", nombre: "Profesional de prueba B" }], motivosPrioridad: ["VENCIDA"], prioridad: 1 },
+    { id: "00000000-0000-4000-8000-000000000002", paciente: { nombre: "Caso sintético dos" }, problemaSalud: "Hipertensión", nombreGarantia: "Diagnóstico", establecimiento: "Centro Sur", fechaLimite: "2026-12-28", estadoGestion: "SIN_GESTION", estadoVencimiento: "normal", diasRestantes: 40, cantidadProfesionalesCoincidentes: 0, profesionalesCoincidentes: [], motivosPrioridad: ["SIN_PROFESIONAL_ACTIVO"], prioridad: 3 },
   ],
 };
 const nav = vi.fn();
@@ -99,14 +99,27 @@ describe("Supervisión SOME: datos y estados de la pantalla", () => {
     expect(rows[2].textContent).toContain("Caso sintético dos");
     expect(rows[1].textContent).toContain("En gestión");
     expect(rows[1].textContent).toContain("Tratamiento");
-    expect(rows[1].textContent).toContain("2 profesionales");
-    expect(rows[2].textContent).toContain("0 · Sin coincidencia");
+    expect(within(rows[1]).getByRole("list", { name: "Funcionarios a cargo" }).textContent).toContain("Profesional de prueba A");
+    expect(rows[1].textContent).toContain("Profesional de prueba B");
+    expect(rows[1].textContent).not.toContain("2 profesionales");
+    expect(rows[2].textContent).toContain("Sin funcionario asociado");
     fireEvent.click(rows[1]);
     expect(nav).toHaveBeenLastCalledWith("detalle", { id: caseId });
     nav.mockClear();
     await userEvent.setup().click(screen.getByRole("button", { name: "Abrir detalle de Caso sintético uno" }));
     expect(nav).toHaveBeenCalledTimes(1);
     expect(nav).toHaveBeenCalledWith("detalle", { id: caseId });
+  });
+  it("muestra el nombre completo cuando coincide un solo funcionario", async () => {
+    const data = structuredClone(summary);
+    data.prioritarios[0].cantidadProfesionalesCoincidentes = 1;
+    data.prioritarios[0].profesionalesCoincidentes = [{ usuarioId: "one", nombre: "Funcionaria de prueba con nombres y apellidos extensos" }];
+    api.summary.mockResolvedValue(data);
+    render(createElement(SupervisionSome, props));
+    const table = await screen.findByRole("table");
+    expect(within(table).getByRole("columnheader", { name: "Funcionarios a cargo" })).toBeTruthy();
+    expect(within(table).getByText("Funcionaria de prueba con nombres y apellidos extensos")).toBeTruthy();
+    expect(table.textContent).not.toContain("1 profesional");
   });
   it("un error muestra reintento sin indicadores ficticios y una recuperación carga los datos", async () => {
     api.summary.mockRejectedValueOnce(new ApiError("Resumen temporalmente no disponible.", [], "SUPERVISION_UNAVAILABLE"));

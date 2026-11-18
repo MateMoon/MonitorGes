@@ -13,6 +13,7 @@ export interface SupervisionPriorityCase {
   estadoVencimiento: Status
   diasRestantes: number
   cantidadProfesionalesCoincidentes: number
+  profesionalesCoincidentes: { usuarioId: string; nombre: string }[]
   motivosPrioridad: ("VENCIDA" | "CRITICA" | "SIN_PROFESIONAL_ACTIVO")[]
   prioridad: 1 | 2 | 3
 }
@@ -82,6 +83,8 @@ function validSummary(value: unknown): value is SupervisionSummary {
     && typeof row.estadoGestion === "string" && management.includes(row.estadoGestion)
     && typeof row.diasRestantes === "number" && Number.isSafeInteger(row.diasRestantes)
     && count(row.cantidadProfesionalesCoincidentes) && [1, 2, 3].includes(row.prioridad as number)
+    && Array.isArray(row.profesionalesCoincidentes) && row.profesionalesCoincidentes.length === row.cantidadProfesionalesCoincidentes
+    && row.profesionalesCoincidentes.every((professional) => object(professional) && typeof professional.usuarioId === "string" && typeof professional.nombre === "string")
     && Array.isArray(row.motivosPrioridad) && row.motivosPrioridad.every((reason) => ["VENCIDA", "CRITICA", "SIN_PROFESIONAL_ACTIVO"].includes(reason)))
 }
 

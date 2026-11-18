@@ -14,6 +14,7 @@ export interface PriorityCase {
   estadoVencimiento: GuaranteeStatus;
   diasRestantes: number;
   cantidadProfesionalesCoincidentes: number;
+  profesionalesCoincidentes: { usuarioId: string; nombre: string }[];
   motivosPrioridad: PriorityReason[];
   prioridad: 1 | 2 | 3;
 }

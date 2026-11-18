@@ -119,6 +119,7 @@ export async function readSupervisionSummary(today: string): Promise<Supervision
           estadoGestion: row.estadoGestion, estadoVencimiento: estado,
           diasRestantes: getDaysRemaining(fechaLimite, today),
           cantidadProfesionalesCoincidentes: matched.length, motivosPrioridad: motivos,
+          profesionalesCoincidentes: matched.map(({ id, nombre }) => ({ usuarioId: id, nombre })).sort((a, b) => a.nombre.localeCompare(b.nombre, "es") || a.usuarioId.localeCompare(b.usuarioId)),
           prioridad: (index + 1) as 1 | 2 | 3,
         });
       }

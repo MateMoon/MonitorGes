@@ -171,7 +171,7 @@ describe("Supervisión SOME: indicadores y cobertura", () => {
     expect(data.cobertura.sinProfesionalNoCumplidas).toBe(1);
     expect(data.criteriosCobertura).toMatchObject({ profesionalesActivos: 1, profesionalesConReglasEfectivas: 0 });
     expect(data.distribuciones.porProfesional).toEqual([]);
-    expect(data.prioritarios[0]).toMatchObject({ prioridad: 3, motivosPrioridad: ["SIN_PROFESIONAL_ACTIVO"] });
+    expect(data.prioritarios[0]).toMatchObject({ prioridad: 3, motivosPrioridad: ["SIN_PROFESIONAL_ACTIVO"], profesionalesCoincidentes: [] });
   });
   it("mantiene reglas heredadas y no recupera tipos anteriores cuando el JSON está vacío", async () => {
     memory.rows = [guarantee(1, 30)];
@@ -198,8 +198,26 @@ describe("Supervisión SOME: indicadores y cobertura", () => {
     expect(data.distribuciones.porProfesional.map((entry: any) => entry.cantidad)).toEqual([2, 2]);
     expect(data.prioritarios).toHaveLength(2);
     expect(data.prioritarios.every((row: any) => row.cantidadProfesionalesCoincidentes === 2)).toBe(true);
+    expect(data.prioritarios.every((row: any) => JSON.stringify(row.profesionalesCoincidentes) === JSON.stringify([{ usuarioId: "a", nombre: "Profesional a" }, { usuarioId: "b", nombre: "Profesional b" }]))).toBe(true);
     expect(data.distribuciones.porProblemaSalud).toEqual([{ problemaSalud: "Diabetes", cantidad: 2 }]);
     expect(data.distribuciones.porEstablecimiento).toEqual([{ establecimiento: "Centro Norte", cantidad: 2 }]);
+  });
+  it("devuelve nombres actuales de funcionarios coincidentes y excluye cuentas inactivas, otros roles y reglas ajenas", async () => {
+    memory.rows = [guarantee(1, -1)];
+    memory.users = [
+      professional("z", [rule(), rule("diabetes")], { nombre: "Ana de prueba" }),
+      professional("a", [rule()], { nombre: "Zoe de prueba" }),
+      professional("inactive", [rule()], { activo: false }),
+      professional("admin", [rule()], { rol: "ADMIN" }),
+      professional("other", [rule("otro problema")]),
+    ];
+    const data = (await request()).json().data;
+    expect(data.prioritarios[0].profesionalesCoincidentes).toEqual([{ usuarioId: "z", nombre: "Ana de prueba" }, { usuarioId: "a", nombre: "Zoe de prueba" }]);
+    expect(data.prioritarios[0].cantidadProfesionalesCoincidentes).toBe(2);
+    expect(data.prioritarios[0].profesionalesCoincidentes[0]).not.toHaveProperty("rules");
+    memory.users[1].activo = false;
+    memory.users[0].nombre = "Ana de prueba actualizada";
+    expect((await request()).json().data.prioritarios[0]).toMatchObject({ cantidadProfesionalesCoincidentes: 1, profesionalesCoincidentes: [{ usuarioId: "z", nombre: "Ana de prueba actualizada" }] });
   });
   it.each([
     { label: "texto", invalid: "bad-json" },

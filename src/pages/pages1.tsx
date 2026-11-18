@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import {
-  AlertCircle, ArrowLeft, ArrowRight, CheckCircle2, ChevronLeft, ChevronRight, Clock, Eye, FileSpreadsheet, Loader2, Lock, Search, ShieldCheck, User, X, CircleSlash, Timer,
+  AlertCircle, ArrowLeft, ArrowRight, CheckCircle2, ChevronLeft, ChevronRight, Clock, Eye, EyeOff, FileSpreadsheet, Loader2, Lock, Search, ShieldCheck, User, X, CircleSlash, Timer,
 } from 'lucide-react'
 import { STATUS, STATUS_ORDER, fmt, rutFull, type Status } from '../data'
 import { login as authenticate, type AuthUser } from '../services/auth'
@@ -25,6 +25,8 @@ export function Logo({ light, size = 36 }: { light?: boolean; size?: number }) {
 export function Login({ onLogin }: { onLogin: (user: AuthUser) => void }) {
   const [u, setU] = useState('')
   const [p, setP] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const passwordId = useId()
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
@@ -52,7 +54,16 @@ export function Login({ onLogin }: { onLogin: (user: AuthUser) => void }) {
           {error && <div role="alert" className="mt-6 flex items-start gap-2.5 rounded-lg border border-[#f1b9b4] bg-[#fbe7e5] px-3.5 py-3 text-sm text-[#a12a22]"><AlertCircle className="mt-0.5 size-4 shrink-0" /><span>{error}</span></div>}
           <div className="mt-6 space-y-4">
             <label className="block"><span className="mb-1.5 block text-sm font-medium">Usuario</span><div className="relative"><User className="absolute left-3 top-2.5 size-4 text-muted" /><input required autoComplete="username" className={cx(inputCls, 'pl-9')} value={u} onChange={(e) => setU(e.target.value)} placeholder="nombre.apellido" autoFocus /></div></label>
-            <label className="block"><span className="mb-1.5 block text-sm font-medium">Contraseña</span><div className="relative"><Lock className="absolute left-3 top-2.5 size-4 text-muted" /><input required type="password" autoComplete="current-password" className={cx(inputCls, 'pl-9')} value={p} onChange={(e) => setP(e.target.value)} placeholder="Contraseña" /></div></label>
+            <div>
+              <label htmlFor={passwordId} className="mb-1.5 block text-sm font-medium">Contraseña</label>
+              <div className="relative">
+                <Lock aria-hidden="true" className="absolute left-3 top-2.5 size-4 text-muted" />
+                <input id={passwordId} required type={showPassword ? 'text' : 'password'} autoComplete="current-password" className={cx(inputCls, 'pl-9 pr-11')} value={p} onChange={(e) => setP(e.target.value)} placeholder="Contraseña" />
+                <button type="button" onClick={() => setShowPassword((visible) => !visible)} aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'} title={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'} aria-controls={passwordId} className="absolute inset-y-0 right-0 flex w-10 items-center justify-center rounded-r-lg text-muted hover:text-brand focus-visible:outline-2 focus-visible:outline-brand">
+                  {showPassword ? <EyeOff aria-hidden="true" className="size-4" /> : <Eye aria-hidden="true" className="size-4" />}
+                </button>
+              </div>
+            </div>
           </div>
           <Btn type="submit" variant="primary" className="mt-6 w-full py-2.5" disabled={loading}>{loading ? <><Loader2 className="size-4 animate-spin" />Verificando…</> : 'Ingresar'}</Btn>
           <p className="mt-8 flex items-center gap-1.5 text-xs text-muted"><Lock className="size-3" />El acceso se valida en el servidor.</p>

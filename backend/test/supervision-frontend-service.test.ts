@@ -55,6 +55,16 @@ afterEach(() => vi.unstubAllGlobals());
 const respond = (body: unknown, status = 200) => fetchMock.mockResolvedValue({ ok: status < 400, status, json: async () => body });
 
 describe("servicio frontend de supervisión", () => {
+  it.each([0, 1, 2])("admite los nombres de %i funcionarios en un caso prioritario", async (quantity) => {
+    const data: any = empty();
+    data.prioritarios = [{ id: "case-1", paciente: { nombre: "Caso sintético" }, problemaSalud: "Diabetes", nombreGarantia: "Tratamiento", establecimiento: "Centro Norte", fechaLimite: "2026-11-17", estadoGestion: "EN_GESTION", estadoVencimiento: "vencida", diasRestantes: -1, cantidadProfesionalesCoincidentes: quantity, profesionalesCoincidentes: Array.from({ length: quantity }, (_, index) => ({ usuarioId: `user-${index}`, nombre: `Funcionario de prueba ${index}` })), motivosPrioridad: ["VENCIDA"], prioridad: 1 }];
+    respond({ data });
+    expect(await getSupervisionSummary()).toEqual(data);
+    if (quantity) {
+      data.prioritarios[0].profesionalesCoincidentes.pop();
+      await expect(getSupervisionSummary()).rejects.toMatchObject({ code: "INVALID_SUPERVISION_RESPONSE" });
+    }
+  });
   it("consulta exclusivamente el endpoint real con sesión, señal de cancelación y sin caché", async () => {
     const data = empty(); respond({ data });
     const controller = new AbortController();

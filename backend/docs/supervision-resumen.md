@@ -129,6 +129,7 @@ vencida sin cobertura aparece una vez, con los dos motivos.
 | `estadoVencimiento` | `vencida`, `critica`, `proxima`, `atencion` o `normal` |
 | `diasRestantes` | Entero, negativo cuando está vencida |
 | `cantidadProfesionalesCoincidentes` | Número de profesionales distintos |
+| `profesionalesCoincidentes` | Array de `{ usuarioId, nombre }` de profesionales activos cuyas reglas coinciden; orden por nombre e ID, sin repetir una cuenta por varias reglas |
 | `motivosPrioridad` | Array de `VENCIDA`, `CRITICA`, `SIN_PROFESIONAL_ACTIVO` |
 | `prioridad` | Grupo 1, 2 o 3 |
 
@@ -163,6 +164,9 @@ Estos comandos no necesitan ejecutar migraciones ni enviar correos reales.
 El menú y la navegación interna se restringen a ADMIN, además del guard del backend.
 La pantalla muestra los seis indicadores, el aviso de cobertura, las tres
 distribuciones y la tabla de casos prioritarios con acceso al detalle existente.
+La columna «Funcionarios a cargo» muestra todos los nombres de
+`profesionalesCoincidentes`, o «Sin funcionario asociado» para un array vacío.
+Son coincidencias por reglas de cobertura; no implican asignación individual.
 Trata carga, vacío, 401, 403 y errores de servicio de forma separada, sin reemplazar
 errores por ceros. La tabla envuelve textos largos y mantiene el desplazamiento
 horizontal dentro de su contenedor, también en móvil.

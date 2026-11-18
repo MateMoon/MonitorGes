@@ -9,6 +9,7 @@ export default function UserModal({
   busy = false,
   wide = false,
   onClose,
+  actions,
   children,
 }: {
   title: string
@@ -17,6 +18,7 @@ export default function UserModal({
   busy?: boolean
   wide?: boolean
   onClose: () => void
+  actions?: ReactNode
   children: ReactNode
 }) {
   const dialog = useRef<HTMLDialogElement>(null)
@@ -79,7 +81,7 @@ export default function UserModal({
     >
       <div hidden={confirmDiscard} inert={confirmDiscard}>
         <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-line bg-white px-5 py-4">
-          <div>
+          <div className="min-w-0">
             <h3 id={`${id}-title`} className="text-lg font-semibold">
               {title}
             </h3>
@@ -89,15 +91,18 @@ export default function UserModal({
               </p>
             )}
           </div>
-          <button
-            type="button"
-            aria-label="Cerrar ventana"
-            disabled={busy}
-            onClick={requestClose}
-            className="rounded-lg p-1 text-muted hover:bg-canvas focus-visible:outline-2 focus-visible:outline-brand disabled:opacity-50"
-          >
-            <X className="size-5" />
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            {actions}
+            <button
+              type="button"
+              aria-label="Cerrar ventana"
+              disabled={busy}
+              onClick={requestClose}
+              className="rounded-lg p-1 text-muted hover:bg-canvas focus-visible:outline-2 focus-visible:outline-brand disabled:opacity-50"
+            >
+              <X className="size-5" />
+            </button>
+          </div>
         </div>
         {children}
         <div className="border-t border-line px-5 py-3">

@@ -2,15 +2,17 @@ import { useEffect, useState } from 'react'
 import { getCurrentUser, logout, type AuthUser } from './services/auth'
 import { registrarGestionGarantia, type ActuacionInput } from './services/garantias'
 import type { EstadoGestion } from './types'
-import { CheckCircle2, History, LayoutDashboard, ListChecks, LogOut, Settings, Upload, type LucideIcon } from 'lucide-react'
+import { CheckCircle2, ClipboardList, History, LayoutDashboard, ListChecks, LogOut, Settings, Upload, type LucideIcon } from 'lucide-react'
 import type { Status } from './data'
 import { Configuracion, Historial, Importar } from './pages/pages2'
 import { Dashboard, Detalle, Garantias, Login, Logo, type Nav, type Page } from './pages/pages1'
 import { cx } from './ui'
+import SupervisionSome from './pages/SupervisionSome'
 
 const MENU: { id: Page; label: string; icon: LucideIcon; title: string }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, title: 'Dashboard' },
   { id: 'garantias', label: 'Garantías', icon: ListChecks, title: 'Garantías' },
+  { id: 'supervision', label: 'Supervisión SOME', icon: ClipboardList, title: 'Supervisión SOME' },
   { id: 'importar', label: 'Importar nómina', icon: Upload, title: 'Importar nómina' },
   { id: 'historial', label: 'Historial de importaciones', icon: History, title: 'Historial de importaciones' },
   // Estadísticas permanece temporalmente deshabilitada.
@@ -35,6 +37,7 @@ export default function App() {
   const nav: Nav = (p, o) => {
     // Estadísticas permanece bloqueada mientras está temporalmente deshabilitada.
     if (p === 'estadisticas') return
+    if (p === 'supervision' && user?.rol !== 'ADMIN') return
     setPage(p); setNavKey((k) => k + 1)
     if (o?.id) setSel(o.id)
     setPreset(o?.estados)
@@ -64,6 +67,7 @@ export default function App() {
           {MENU.filter((m) => {
             if (m.id === 'importar') return user.rol === 'ADMIN' || user.puedeCargarNominas
             if (m.id === 'configuracion') return user.rol === 'ADMIN'
+            if (m.id === 'supervision') return user.rol === 'ADMIN'
             return true
           }).map((m) => (
             <button key={m.id} onClick={() => nav(m.id)} title={m.label}
@@ -97,6 +101,7 @@ export default function App() {
           {page === 'detalle' && <Detalle id={sel} nav={nav} onGestionar={gestionar} canManage={user.rol === 'ADMIN' || user.rol === 'PROFESIONAL'} isAdmin={user.rol === 'ADMIN'} />}
           {page === 'importar' && <Importar nav={nav} toast={toast} />}
           {page === 'historial' && <Historial />}
+          {page === 'supervision' && <SupervisionSome isAdmin={user.rol === 'ADMIN'} nav={nav} onSessionExpired={() => setUser(null)} />}
           {/* Estadísticas sigue temporalmente deshabilitada.
           {page === 'estadisticas' && <Estadisticas />}
           */}

@@ -167,8 +167,19 @@ export default function UserEditor({
       dirty={dirty}
       busy={busy}
       onClose={onClose}
+      actions={
+        <Btn
+          type="submit"
+          form={`${id}-form`}
+          variant="primary"
+          disabled={busy || confirmDeactivation}
+        >
+          {busy && <Loader2 className="size-4 animate-spin" />}
+          {busy ? "Guardando…" : user ? "Guardar cambios" : "Crear usuario"}
+        </Btn>
+      }
     >
-      <form noValidate onSubmit={submit} className="space-y-5 p-5">
+      <form id={`${id}-form`} noValidate onSubmit={submit} className="space-y-5 p-5">
         {error && (
           <p
             role="alert"
@@ -413,16 +424,6 @@ export default function UserEditor({
             </div>
           </div>
         )}
-        <div className="flex justify-end">
-          <Btn
-            type="submit"
-            variant="primary"
-            disabled={busy || confirmDeactivation}
-          >
-            {busy && <Loader2 className="size-4 animate-spin" />}
-            {busy ? "Guardando…" : user ? "Guardar cambios" : "Crear usuario"}
-          </Btn>
-        </div>
       </form>
     </UserModal>
   )

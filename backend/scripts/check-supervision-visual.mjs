@@ -10,10 +10,13 @@ import path from "node:path";
 import { setTimeout as pause } from "node:timers/promises";
 import { prisma } from "../dist/src/db/prisma.js";
 import * as supervision from "../dist/src/modules/supervision/service.js";
+import { readResponsibilities } from "../dist/src/modules/supervision/responsibility-repository.js";
 
 const connection = new URL(process.env.DATABASE_URL ?? "");
 if (!['localhost', '127.0.0.1'].includes(connection.hostname) || connection.pathname !== '/monitor_garantias_qa') throw new Error("EXPECTED_LOCAL_QA_READ_ONLY");
 const application = "http://127.0.0.1:8443";
+const coordinator = process.argv.includes("--coordinator");
+const checkingResponsibilities = coordinator || process.argv.includes("--responsibilities");
 const folder = await mkdtemp(path.join(os.tmpdir(), "ges-supervision-visual-"));
 const executable = ["C:/Program Files/Google/Chrome/Application/chrome.exe", "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"].find(existsSync);
 if (!executable) throw new Error("NO_LOCAL_BROWSER");
@@ -39,13 +42,32 @@ try {
     if (socket.readyState !== WebSocket.OPEN) { pending.delete(id); reject(new Error("CDP_SOCKET_CLOSED")); return; }
     socket.send(JSON.stringify({ id, method, params }));
   });
-  const { data: original } = await supervision.getSupervisionSummary();
+  const original = coordinator ? null : (await supervision.getSupervisionSummary()).data;
   const summary = structuredClone(original);
-  summary.prioritarios.forEach((row, index) => {
+  summary?.prioritarios.forEach((row, index) => {
     row.paciente = { nombre: `Caso ${index + 1} · identidad reservada` };
     row.profesionalesCoincidentes.forEach((professional) => { professional.nombre = "Funcionario de revisión visual con nombre extenso"; });
   });
-  summary.distribuciones.porProfesional.forEach((row, index) => { row.nombre = `Profesional ${index + 1}`; });
+  summary?.distribuciones.porProfesional.forEach((row, index) => { row.nombre = `Profesional ${index + 1}`; });
+  let responsibilities = null;
+  let coordinatorAuthorizationSimulated = false;
+  if (checkingResponsibilities) {
+    const actor = await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SET TRANSACTION READ ONLY`;
+      const selected = await tx.usuario.findFirst({ where: { activo: true, rol: coordinator ? "COORDINADOR_SOME" : "ADMIN" }, select: { id: true, rol: true } });
+      if (selected || !coordinator) return selected;
+      return tx.usuario.findFirst({ where: { activo: true, rol: "ADMIN" }, select: { id: true, rol: true } });
+    });
+    if (!actor) throw new Error("NO_QA_ACTOR_FOR_VISUAL_CHECK");
+    responsibilities = await readResponsibilities(actor.id);
+    if (coordinator && actor.rol !== "COORDINADOR_SOME") {
+      // QA may have no coordinator. Use the actual read-only staff snapshot for
+      // layout only; authorization is verified separately by real route tests.
+      coordinatorAuthorizationSimulated = true;
+      responsibilities.funcionarios = responsibilities.funcionarios.filter((row) => row.activo && ["PROFESIONAL", "LECTOR"].includes(row.rol));
+    }
+    responsibilities.funcionarios.forEach((row, index) => { row.nombre = `Funcionario ${index + 1} · identidad reservada`; });
+  }
   let activity = null;
   if (process.argv.includes("--activity") && supervision.getSupervisionActivity) {
     activity = (await supervision.getSupervisionActivity()).data;
@@ -56,6 +78,7 @@ try {
       if (row.respaldo) row.respaldo = "Respaldo reservado para esta revisión visual";
     });
   }
+  const requests = [];
   socket.onmessage = async ({ data }) => {
     const message = JSON.parse(data);
     if (message.id && pending.has(message.id)) {
@@ -69,10 +92,13 @@ try {
         await send("Fetch.failRequest", { requestId, errorReason: "BlockedByClient" }); return;
       }
       if (!url.pathname.startsWith("/api/")) { await send("Fetch.continueRequest", { requestId }); return; }
+      requests.push({ method: request.method, path: url.pathname });
       let body; let responseCode = 200;
-      if (url.pathname === "/api/auth/me") body = { data: { user: { id: "visual-admin", nombre: "Revisión visual", username: "visual-check", email: "visual@example.test", rol: "ADMIN", puedeCargarNominas: false } } };
-      else if (url.pathname === "/api/supervision/resumen") body = { data: summary };
+      if (request.method !== "GET") { responseCode = 403; body = { error: { code: "FORBIDDEN", message: "La revisión visual no permite escrituras." } }; }
+      else if (url.pathname === "/api/auth/me") body = { data: { user: { id: "visual-check", nombre: "Revisión visual", username: "visual-check", email: "visual@example.test", rol: coordinator ? "COORDINADOR_SOME" : "ADMIN", puedeCargarNominas: false } } };
+      else if (url.pathname === "/api/supervision/resumen" && summary) body = { data: summary };
       else if (url.pathname === "/api/supervision/eventos" && activity) body = { data: activity };
+      else if (url.pathname === "/api/supervision/responsabilidades" && responsibilities) body = { data: responsibilities };
       else { responseCode = 403; body = { error: { code: "FORBIDDEN", message: "Solo se verifica Supervisión SOME en este navegador aislado." } }; }
       await send("Fetch.fulfillRequest", { requestId, responseCode, responseHeaders: [{ name: "Content-Type", value: "application/json" }], body: Buffer.from(JSON.stringify(body)).toString("base64") });
     }
@@ -92,18 +118,19 @@ try {
   await send("Page.navigate", { url: application });
   await until(`Array.from(document.querySelectorAll('aside button')).some(button => button.title === 'Supervisión SOME')`);
   await evaluate(`Array.from(document.querySelectorAll('aside button')).find(button => button.title === 'Supervisión SOME').click()`);
-  await until(`document.querySelector('[aria-label="Indicadores de supervisión"]') !== null`);
-  const capture = async (name, width, height) => {
+  await until(coordinator ? `document.querySelector('[aria-label="Responsabilidades de funcionarios"]') !== null` : `document.querySelector('[aria-label="Indicadores de supervisión"]') !== null`);
+  const capture = async (name, width, height, viewportOnly = false) => {
     await send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false });
     await pause(200);
     const metrics = await send("Page.getLayoutMetrics");
-    const result = await send("Page.captureScreenshot", { format: "png", captureBeyondViewport: true, clip: { x: 0, y: 0, width, height: Math.ceil(metrics.cssContentSize.height), scale: 1 } });
+    const result = await send("Page.captureScreenshot", { format: "png", captureBeyondViewport: !viewportOnly, clip: { x: 0, y: 0, width, height: viewportOnly ? height : Math.ceil(metrics.cssContentSize.height), scale: 1 } });
     const filename = path.join(folder, name);
     await writeFile(filename, Buffer.from(result.data, "base64"));
     const layout = await evaluate(`({ viewport: innerWidth, document: document.documentElement.scrollWidth, overflowingCells: Array.from(document.querySelectorAll('td,th')).filter(cell => cell.scrollWidth > cell.clientWidth + 1).length, boxes: Array.from(document.querySelectorAll('main,main>div,table,table~p')).concat(document.querySelector('table')?.parentElement ?? []).map(el => ({ tag: el.tagName, width: el.clientWidth, scroll: el.scrollWidth, right: Math.round(el.getBoundingClientRect().right), overflow: getComputedStyle(el).overflowX })) })`);
     return { filename, ...layout };
   };
   const screenshots = [];
+  if (!coordinator) {
   screenshots.push(await capture("resumen-desktop.png", 1440, 1000));
   screenshots.push(await capture("resumen-mobile.png", 390, 844));
   await send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
@@ -113,13 +140,28 @@ try {
   const rightFile = path.join(folder, "resumen-table-right.png");
   await writeFile(rightFile, Buffer.from(right.data, "base64"));
   screenshots.push({ filename: rightFile });
+  }
+  if (responsibilities) {
+    await evaluate(`Array.from(document.querySelectorAll('[role="tab"]')).find(button => button.textContent.includes('Responsabilidades')).click(); window.scrollTo(0,0)`);
+    await until(`document.querySelector('[aria-label="Responsabilidades de funcionarios"]') !== null`);
+    screenshots.push(await capture("responsabilidades-desktop.png", 1440, 1000));
+    screenshots.push(await capture("responsabilidades-mobile.png", 390, 844));
+    const hasStaff = await evaluate(`document.querySelector('[aria-label^="Editar reglas de"]') !== null`);
+    if (hasStaff) {
+      await evaluate(`document.querySelector('[aria-label^="Editar reglas de"]').click()`);
+      await until(`document.querySelector('dialog[open]') !== null`);
+      screenshots.push(await capture("reglas-desktop.png", 1440, 1000, true));
+      screenshots.push(await capture("reglas-mobile.png", 390, 844, true));
+      await evaluate(`document.querySelector('dialog button[aria-label="Cerrar ventana"]').click()`);
+    }
+  }
   if (activity) {
     await evaluate(`Array.from(document.querySelectorAll('[role="tab"]')).find(button => button.textContent.includes('Gestiones y cambios')).click()`);
     await until(`document.querySelector('[aria-label="Actividad de supervisión"]') !== null`);
     screenshots.push(await capture("gestiones-desktop.png", 1440, 1000));
     screenshots.push(await capture("gestiones-mobile.png", 390, 844));
   }
-  console.log(JSON.stringify({ readOnly: true, namesAnonymized: true, screenshots }));
+  console.log(JSON.stringify({ readOnly: true, namesAnonymized: true, coordinator, coordinatorAuthorizationSimulated, requests, screenshots }));
   const version = await (await fetch(`http://127.0.0.1:${port}/json/version`)).json();
   browserSocket = new WebSocket(version.webSocketDebuggerUrl);
   await new Promise((resolve, reject) => { browserSocket.onopen = resolve; browserSocket.onerror = reject; });

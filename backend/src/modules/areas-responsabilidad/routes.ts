@@ -13,7 +13,9 @@ import {
   type CatalogKind,
 } from "./repository.js";
 
-const authorized = requireRoles("ADMIN", "COORDINADOR_SOME");
+// Coordinators manage only the current Usuario.reglasAsignacion via supervision.
+// The legacy areas model must not provide a second path to administrative accounts.
+const authorized = requireRoles("ADMIN");
 const adminOnly = requireRoles("ADMIN");
 const idSchema = z.string().uuid();
 const areaSchema = z.object({

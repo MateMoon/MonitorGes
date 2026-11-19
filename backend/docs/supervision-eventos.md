@@ -80,8 +80,10 @@ respuestas incompletas con `INVALID_SUPERVISION_ACTIVITY_RESPONSE`.
 El historial recupera los eventos de gestión que ya guarda el sistema. Las
 importaciones no producen eventos detallados de cambios de campos; no se inventa
 historial de importaciones, asignaciones individuales o cambios de responsables.
-Los antecedentes antiguos se identifican explícitamente. No se implementan
-Responsabilidades ni Calidad de datos.
+Los antecedentes antiguos se identifican explícitamente. No se implementa
+Calidad de datos. Responsabilidades dispone de su configuración compartida en
+[supervision-responsabilidades.md](supervision-responsabilidades.md), sin ampliar
+el acceso del coordinador a este historial global.
 
 Las pruebas de `test/supervision-activity.test.ts`,
 `test/supervision-frontend-service.test.ts` y `test/supervision-ui.test.ts` verifican

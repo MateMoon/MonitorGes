@@ -1,8 +1,10 @@
 import type { FastifyInstance } from "fastify";
 import { requireRoles } from "../auth/routes.js";
 import { getSupervisionSummary, getSupervisionActivity } from "./service.js";
+import { supervisionResponsibilityRoutes } from "./responsibility-routes.js";
 
 export async function supervisionRoutes(app: FastifyInstance) {
+  await supervisionResponsibilityRoutes(app);
   app.get("/eventos", { preHandler: requireRoles("ADMIN") }, async (request, reply) => {
     reply.header("Cache-Control", "no-store");
     try {

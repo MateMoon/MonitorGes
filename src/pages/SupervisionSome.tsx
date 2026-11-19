@@ -6,6 +6,7 @@ import { MANAGEMENT } from "../management"
 import { Btn, Card, CardHeader, Days, Empty, StatusBadge, Th, cx, tdCls } from "../ui"
 import type { Nav } from "./pages1"
 import SupervisionActivityPanel from "./SupervisionActivity"
+import SupervisionResponsibilities from "./SupervisionResponsibilities"
 
 type State = { status: "loading" } | { status: "ready"; data: SupervisionSummary } | { status: "error"; message: string; code?: string }
 
@@ -23,15 +24,31 @@ function Distribution({ title, rows, overlap = false }: { title: string; rows: {
   </Card>
 }
 
-export default function SupervisionSome({ isAdmin, nav, onSessionExpired }: { isAdmin: boolean; nav: Nav; onSessionExpired: () => void }) {
+type Props = { isAdmin: boolean; isCoordinator?: boolean; nav: Nav; onSessionExpired: () => void }
+export default function SupervisionSome(props: Props) {
+  const id = useId()
+  if (!props.isAdmin && props.isCoordinator) return <div className="page-in space-y-5">
+    <div><h2 className="text-2xl font-semibold">Supervisión SOME</h2><p className="mt-1 text-sm text-muted">Administración de las reglas de profesionales y lectores activos autorizados.</p></div>
+    <div role="tablist" aria-label="Vistas de supervisión" className="border-b border-line"><button type="button" role="tab" id={`${id}-tab`} aria-selected="true" aria-controls={`${id}-panel`} className="-mb-px border-b-2 border-brand px-4 py-2.5 text-sm font-medium text-brand">Responsabilidades</button></div>
+    <div role="tabpanel" id={`${id}-panel`} aria-labelledby={`${id}-tab`}><SupervisionResponsibilities nav={props.nav} onSessionExpired={props.onSessionExpired} /></div>
+  </div>
+  return <AdminSupervision {...props} />
+}
+
+const tabs = [["resumen", "Resumen"], ["responsabilidades", "Responsabilidades"], ["actividad", "Gestiones y cambios"]] as const
+function AdminSupervision({ isAdmin, nav, onSessionExpired }: Props) {
   const [state, setState] = useState<State>({ status: "loading" })
   const [attempt, setAttempt] = useState(0)
-  const [tab, setTab] = useState<"resumen" | "actividad">("resumen")
+  const [tab, setTab] = useState<typeof tabs[number][0]>("resumen")
   const [activityVisited, setActivityVisited] = useState(false)
+  const [responsibilitiesVisited, setResponsibilitiesVisited] = useState(false)
+  const [summaryStale, setSummaryStale] = useState(false)
   const tabsId = useId()
-  const selectTab = (value: "resumen" | "actividad") => {
+  const selectTab = (value: typeof tab) => {
     setTab(value)
     if (value === "actividad") setActivityVisited(true)
+    if (value === "responsabilidades") setResponsibilitiesVisited(true)
+    if (value === "resumen" && summaryStale) { setAttempt((current) => current + 1); setSummaryStale(false) }
   }
   useEffect(() => {
     if (!isAdmin) return
@@ -65,11 +82,12 @@ export default function SupervisionSome({ isAdmin, nav, onSessionExpired }: { is
       </div>
       {state.status === "ready" && tab === "resumen" && <Btn onClick={() => setAttempt((current) => current + 1)}><RefreshCw className="size-4" />Actualizar</Btn>}
     </div>
-    <div role="tablist" aria-label="Vistas de supervisión" className="flex border-b border-line">
-      {([ ["resumen", "Resumen"], ["actividad", "Gestiones y cambios"] ] as const).map(([value, label]) => <button key={value} type="button" role="tab" id={`${tabsId}-tab-${value}`} aria-selected={tab === value} aria-controls={`${tabsId}-panel-${value}`} tabIndex={tab === value ? 0 : -1} className={cx("-mb-px border-b-2 px-4 py-2.5 text-sm font-medium focus-visible:outline-2 focus-visible:outline-brand", tab === value ? "border-brand text-brand" : "border-transparent text-muted hover:text-ink")} onClick={() => selectTab(value)} onKeyDown={(event) => {
+    <div role="tablist" aria-label="Vistas de supervisión" className="flex overflow-x-auto border-b border-line">
+      {tabs.map(([value, label]) => <button key={value} type="button" role="tab" id={`${tabsId}-tab-${value}`} aria-selected={tab === value} aria-controls={`${tabsId}-panel-${value}`} tabIndex={tab === value ? 0 : -1} className={cx("-mb-px shrink-0 border-b-2 px-4 py-2.5 text-sm font-medium focus-visible:outline-2 focus-visible:outline-brand", tab === value ? "border-brand text-brand" : "border-transparent text-muted hover:text-ink")} onClick={() => selectTab(value)} onKeyDown={(event) => {
         if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return
         event.preventDefault()
-        const next = event.key === "Home" ? "resumen" : event.key === "End" ? "actividad" : tab === "resumen" ? "actividad" : "resumen"
+        const position = tabs.findIndex(([key]) => key === tab)
+        const next = tabs[event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : (position + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length][0]
         selectTab(next)
         document.getElementById(`${tabsId}-tab-${next}`)?.focus()
       }}>{label}</button>)}
@@ -116,6 +134,9 @@ export default function SupervisionSome({ isAdmin, nav, onSessionExpired }: { is
       </Card>
       <p className="flex items-center gap-1.5 text-xs text-muted"><CheckCircle2 className="size-3.5" />Los indicadores de gestión y vencimiento pueden superponerse.</p>
     </>}
+    </div>
+    <div role="tabpanel" id={`${tabsId}-panel-responsabilidades`} aria-labelledby={`${tabsId}-tab-responsabilidades`} hidden={tab !== "responsabilidades"}>
+      {responsibilitiesVisited && <SupervisionResponsibilities nav={nav} onSessionExpired={onSessionExpired} onRulesChanged={() => setSummaryStale(true)} />}
     </div>
     <div role="tabpanel" id={`${tabsId}-panel-actividad`} aria-labelledby={`${tabsId}-tab-actividad`} hidden={tab !== "actividad"}>
       {activityVisited && <SupervisionActivityPanel isAdmin={isAdmin} nav={nav} onSessionExpired={onSessionExpired} />}

@@ -270,9 +270,9 @@ describe("administración de usuarios con autorización real", () => {
     },
   )
 
-  it("presenta el bloqueo del último administrador y los tipos inválidos", async () => {
+  it("presenta el bloqueo de acceso del administrador y los tipos inválidos", async () => {
     for (const [code, status] of [
-      ["LAST_ADMIN", 409],
+      ["ADMIN_ACCESS_PROTECTED", 409],
       ["INVALID_GUARANTEE_TYPE", 400],
     ] as const) {
       mocks.updateManagedUser.mockRejectedValueOnce(

@@ -80,8 +80,8 @@ export default function UserModal({
       }}
     >
       <div hidden={confirmDiscard} inert={confirmDiscard}>
-        <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-line bg-white px-5 py-4">
-          <div className="min-w-0">
+        <div className="sticky top-0 z-10 flex flex-wrap items-start justify-between gap-4 border-b border-line bg-white px-5 py-4">
+          <div className="min-w-0 flex-1 basis-40 [overflow-wrap:anywhere]">
             <h3 id={`${id}-title`} className="text-lg font-semibold">
               {title}
             </h3>
@@ -91,7 +91,7 @@ export default function UserModal({
               </p>
             )}
           </div>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="ml-auto flex shrink-0 items-center gap-2">
             {actions}
             <button
               type="button"

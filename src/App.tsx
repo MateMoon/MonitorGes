@@ -37,7 +37,8 @@ export default function App() {
   const nav: Nav = (p, o) => {
     // Estadísticas permanece bloqueada mientras está temporalmente deshabilitada.
     if (p === 'estadisticas') return
-    if (p === 'supervision' && user?.rol !== 'ADMIN') return
+    if (p === 'supervision' && user?.rol !== 'ADMIN' && user?.rol !== 'COORDINADOR_SOME') return
+    if (p === 'configuracion' && user?.rol !== 'ADMIN') return
     setPage(p); setNavKey((k) => k + 1)
     if (o?.id) setSel(o.id)
     setPreset(o?.estados)
@@ -67,7 +68,7 @@ export default function App() {
           {MENU.filter((m) => {
             if (m.id === 'importar') return user.rol === 'ADMIN' || user.puedeCargarNominas
             if (m.id === 'configuracion') return user.rol === 'ADMIN'
-            if (m.id === 'supervision') return user.rol === 'ADMIN'
+            if (m.id === 'supervision') return user.rol === 'ADMIN' || user.rol === 'COORDINADOR_SOME'
             return true
           }).map((m) => (
             <button key={m.id} onClick={() => nav(m.id)} title={m.label}
@@ -101,7 +102,7 @@ export default function App() {
           {page === 'detalle' && <Detalle id={sel} nav={nav} onGestionar={gestionar} canManage={user.rol === 'ADMIN' || user.rol === 'PROFESIONAL'} isAdmin={user.rol === 'ADMIN'} />}
           {page === 'importar' && <Importar nav={nav} toast={toast} />}
           {page === 'historial' && <Historial />}
-          {page === 'supervision' && <SupervisionSome isAdmin={user.rol === 'ADMIN'} nav={nav} onSessionExpired={() => setUser(null)} />}
+          {page === 'supervision' && <SupervisionSome isAdmin={user.rol === 'ADMIN'} isCoordinator={user.rol === 'COORDINADOR_SOME'} nav={nav} onSessionExpired={() => setUser(null)} />}
           {/* Estadísticas sigue temporalmente deshabilitada.
           {page === 'estadisticas' && <Estadisticas />}
           */}

@@ -126,8 +126,8 @@ export async function getUser(id: string) {
   return publicUser(row)
 }
 
-// Serializable evita que dos bajas concurrentes dejen el sistema sin ADMIN.
-async function transaction<T>(
+// Serializable permite revalidar el perfil persistido ante cambios concurrentes.
+export async function userTransaction<T>(
   work: (tx: Prisma.TransactionClient) => Promise<T>,
 ): Promise<T> {
   for (let attempt = 0; ; attempt++) {
@@ -179,7 +179,7 @@ async function saveTypes(
     })
 }
 
-async function saveAssignmentRules(tx: Prisma.TransactionClient, usuarioId: string, rules: AssignmentRule[] | undefined, types: string[] | undefined) {
+export async function saveAssignmentRules(tx: Prisma.TransactionClient, usuarioId: string, rules: AssignmentRule[] | undefined, types?: string[]) {
   if (rules === undefined) {
     if (types !== undefined) await tx.usuario.update({ where: { id: usuarioId }, data: { reglasAsignacion: legacyAssignmentRules(types) }, select: { id: true } })
     return
@@ -209,7 +209,7 @@ export async function createManagedUser(
 ) {
   const { password: _password, tiposGarantia, reglasAsignacion, ...fields } = input
   const nombres = input.nombres ?? input.nombre
-  return transaction(async (tx) => {
+  return userTransaction(async (tx) => {
     const user = await tx.usuario.create({
       data: {
         ...fields,
@@ -231,7 +231,7 @@ export async function createManagedUser(
 }
 
 export async function updateManagedUser(id: string, input: UpdateUserInput) {
-  return transaction(async (tx) => {
+  return userTransaction(async (tx) => {
     const existing = await tx.usuario.findUnique({
       where: { id },
       select: {
@@ -250,18 +250,13 @@ export async function updateManagedUser(id: string, input: UpdateUserInput) {
       )
     if (
       existing.rol === "ADMIN" &&
-      existing.activo &&
-      (input.rol !== "ADMIN" || !input.activo)
+      (input.rol !== "ADMIN" || (existing.activo && !input.activo))
     ) {
-      const admins = await tx.usuario.count({
-        where: { rol: "ADMIN", activo: true },
-      })
-      if (admins <= 1)
-        throw new UserManagementError(
-          "LAST_ADMIN",
-          "Debe quedar al menos un administrador activo.",
-          409,
-        )
+      throw new UserManagementError(
+        "ADMIN_ACCESS_PROTECTED",
+        "No se puede quitar el perfil de administrador ni desactivar una cuenta administradora activa desde Gestión de usuarios.",
+        409,
+      )
     }
     const { tiposGarantia, reglasAsignacion, ...fields } = input
     const split =
@@ -299,7 +294,7 @@ export async function updateManagedUser(id: string, input: UpdateUserInput) {
 }
 
 export async function changePassword(id: string, passwordHash: string) {
-  return transaction(async (tx) => {
+  return userTransaction(async (tx) => {
     if (!(await tx.usuario.findUnique({ where: { id }, select: { id: true } })))
       throw new UserManagementError(
         "USER_NOT_FOUND",

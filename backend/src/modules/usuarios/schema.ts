@@ -25,6 +25,14 @@ const tiposGarantia = z
   .max(10_000)
   .transform((values) => [...new Set(values)])
   .optional()
+export const assignmentRulesSchema = z.array(z.object({
+  problemaSalud: z.string().max(500),
+  establecimiento: z.string().max(500),
+  tipoGarantia: z.string().max(500),
+}).strict().refine((rule) => Boolean(rule.problemaSalud || rule.establecimiento || rule.tipoGarantia), {
+  message: "Selecciona al menos un criterio en cada regla.",
+})).max(1000)
+
 const fields = {
   nombre,
   nombres,
@@ -34,13 +42,7 @@ const fields = {
   puedeCargarNominas: z.boolean().optional(),
   recibirInformeAutomatico: z.boolean().optional(),
   tiposGarantia,
-  reglasAsignacion: z.array(z.object({
-    problemaSalud: z.string().max(500),
-    establecimiento: z.string().max(500),
-    tipoGarantia: z.string().max(500),
-  }).strict().refine((rule) => Boolean(rule.problemaSalud || rule.establecimiento || rule.tipoGarantia), {
-    message: "Selecciona al menos un criterio en cada regla.",
-  })).max(1000).optional(),
+  reglasAsignacion: assignmentRulesSchema.optional(),
 }
 
 export const createSchema = z

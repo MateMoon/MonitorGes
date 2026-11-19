@@ -119,6 +119,53 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe("Gestión de usuarios: formularios e interacciones", () => {
+  it("protege el perfil y la actividad de ADMIN incluso con varias cuentas administradoras", async () => {
+    const admin = { ...legacy, rol: "ADMIN", puedeCargarNominas: false }
+    api.getUserManagement.mockResolvedValueOnce({ data: [admin, { ...admin, id: "admin-2", nombre: "Otra administradora", username: "otra.admin" }], resumen: { total: 2, activos: 2, informesHabilitados: 0 } })
+    api.updateUser.mockResolvedValueOnce(admin)
+    render(createElement(GestionUsuarios, { isAdmin: true, toast }))
+    const user = userEvent.setup()
+    await screen.findByRole("button", { name: `Editar ${legacy.nombre}` })
+    expect(screen.queryByRole("button", { name: `Desactivar ${legacy.nombre}` })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Desactivar Otra administradora" })).toBeNull()
+    expect(screen.getAllByText("Acceso protegido")).toHaveLength(2)
+    await user.click(screen.getByRole("button", { name: `Editar ${legacy.nombre}` }))
+    const role = screen.getByLabelText("Perfil de acceso") as HTMLSelectElement
+    const active = screen.getByLabelText("Usuario activo") as HTMLInputElement
+    expect(role.disabled).toBe(true)
+    expect(active.disabled).toBe(true)
+    expect((screen.getByLabelText(/Puede cargar nóminas/) as HTMLInputElement).checked).toBe(true)
+    await user.selectOptions(role, "LECTOR")
+    await user.click(active)
+    expect(role.value).toBe("ADMIN")
+    expect(active.checked).toBe(true)
+    expect(screen.getByText(/El perfil de administrador está protegido/)).toBeTruthy()
+    await user.clear(screen.getByLabelText("Correo electrónico"))
+    await user.type(screen.getByLabelText("Correo electrónico"), "actualizado@example.test")
+    await user.click(screen.getByLabelText("Recibir informe automático por correo"))
+    await user.click(screen.getByRole("button", { name: "Limpiar grupo 1" }))
+    await user.click(screen.getByRole("button", { name: "Guardar cambios" }))
+    await waitFor(() => expect(api.updateUser).toHaveBeenCalledWith(legacy.id, expect.objectContaining({ rol: "ADMIN", activo: true, email: "actualizado@example.test", recibirInformeAutomatico: true, reglasAsignacion: [] })))
+  })
+
+  it("permite reactivar una cuenta ADMIN previa inactiva sin ofrecer quitar su perfil", async () => {
+    api.getUserManagement.mockResolvedValueOnce({ data: [{ ...legacy, rol: "ADMIN", activo: false }], resumen: { total: 1, activos: 0, informesHabilitados: 0 } })
+    render(createElement(GestionUsuarios, { isAdmin: true, toast }))
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole("button", { name: `Reactivar ${legacy.nombre}` }))
+    await user.click(screen.getByRole("button", { name: "Confirmar reactivación" }))
+    await waitFor(() => expect(api.updateUser).toHaveBeenCalledWith(legacy.id, expect.objectContaining({ rol: "ADMIN", activo: true })))
+  })
+
+  it("mantiene editable el perfil de otros usuarios y permite crear administradores", async () => {
+    const user = await openNew()
+    const role = screen.getByLabelText("Perfil de acceso") as HTMLSelectElement
+    expect(role.disabled).toBe(false)
+    await fillNew(user)
+    await user.selectOptions(role, "ADMIN")
+    await user.click(screen.getByRole("button", { name: "Crear usuario" }))
+    await waitFor(() => expect(api.createUser).toHaveBeenCalledWith(expect.objectContaining({ rol: "ADMIN", activo: true })))
+  })
   it("muestra aceptación SMTP sin afirmar entrega", async () => {
     api.getIndividualReportResults.mockResolvedValueOnce({ disponible: true, automaticEnabled: false, data: [{ usuarioId: legacy.id, fechaInforme: "2026-11-05", estado: "ACEPTADO_SMTP", cantidadGarantias: 2 }] })
     render(createElement(GestionUsuarios, { isAdmin: true, toast }))
@@ -366,10 +413,10 @@ describe("Gestión de usuarios: formularios e interacciones", () => {
     )
   })
 
-  it("pide confirmación para desactivar y muestra el bloqueo del último ADMIN", async () => {
+  it("pide confirmación para desactivar otros perfiles y presenta errores del backend", async () => {
     const user = userEvent.setup()
     api.updateUser.mockRejectedValueOnce(
-      new Error("Debe quedar al menos un administrador activo."),
+      new Error("No fue posible desactivar el usuario."),
     )
     render(createElement(GestionUsuarios, { isAdmin: true, toast }))
     await user.click(
@@ -382,7 +429,7 @@ describe("Gestión de usuarios: formularios e interacciones", () => {
       screen.getByRole("button", { name: "Confirmar desactivación" }),
     )
     expect(
-      await screen.findByText("Debe quedar al menos un administrador activo."),
+      await screen.findByText("No fue posible desactivar el usuario."),
     ).toBeTruthy()
     expect(screen.getByRole("dialog")).toBeTruthy()
   })

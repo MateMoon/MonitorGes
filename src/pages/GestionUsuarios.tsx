@@ -490,7 +490,7 @@ export default function GestionUsuarios({
                           <KeyRound className="size-3.5" />
                           Contraseña
                         </Btn>
-                        <Btn
+                        {user.rol === "ADMIN" && user.activo ? <span className="self-center px-2 text-xs text-muted">Acceso protegido</span> : <Btn
                           variant={user.activo ? "danger" : "secondary"}
                           className="!px-2 !py-1.5"
                           aria-label={`${
@@ -499,7 +499,7 @@ export default function GestionUsuarios({
                           onClick={() => setAction({ kind: "state", user })}
                         >
                           {user.activo ? "Desactivar" : "Reactivar"}
-                        </Btn>
+                        </Btn>}
                       </div>
                     </td>
                   </tr>

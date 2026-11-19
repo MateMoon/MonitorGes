@@ -12,7 +12,7 @@ import {
 import { Btn, inputCls } from "../ui"
 import UserAssignmentRules from "./UserAssignmentRules"
 import UserModal from "./UserModal"
-import { assignmentGroupsFromRules, expandAssignmentGroups, isEmptyAssignmentGroup } from "../services/assignment-groups"
+import { assignmentGroupsFromRules, expandAssignmentGroups, validateAssignmentGroups } from "../services/assignment-groups"
 
 export default function UserEditor({
   user,
@@ -44,6 +44,8 @@ export default function UserEditor({
   const [confirmDeactivation, setConfirmDeactivation] = useState(false)
   const id = useId()
   const dirty = JSON.stringify(form) !== JSON.stringify(initial)
+  const adminProtected = user?.rol === "ADMIN"
+  const activeProtected = adminProtected && user.activo
   const change = <K extends keyof typeof form,>(
     key: K,
     value: typeof form[K],
@@ -80,10 +82,8 @@ export default function UserEditor({
         "Usa de 3 a 100 letras, números, puntos, guiones o guiones bajos."
     if (!user && (form.password.length < 8 || form.password.length > 128))
       errors.password = "La contraseña debe tener entre 8 y 128 caracteres."
-    if (form.gruposAsignacion.length > 1 && form.gruposAsignacion.some(isEmptyAssignmentGroup))
-      errors.reglasAsignacion = "Selecciona al menos un criterio en cada grupo o elimina el grupo vacío."
-    if (expandAssignmentGroups(form.gruposAsignacion).exceedsLimit)
-      errors.reglasAsignacion = "La selección supera las 1000 combinaciones permitidas. Reduce las opciones seleccionadas."
+    const ruleError = validateAssignmentGroups(form.gruposAsignacion)
+    if (ruleError) errors.reglasAsignacion = ruleError
     setFields(errors)
     if (Object.keys(errors).length) {
       setError("Revisa los campos indicados.")
@@ -268,6 +268,8 @@ export default function UserEditor({
               id={`${id}-rol`}
               className={inputCls}
               value={form.rol}
+              disabled={adminProtected}
+              aria-describedby={adminProtected ? `${id}-admin-profile-note` : undefined}
               onChange={(event) => {
                 setForm((current) => ({
                   ...current,
@@ -283,6 +285,7 @@ export default function UserEditor({
               <option value="LECTOR">Lector</option>
             </select>
             {fieldError("rol")}
+            {adminProtected && <p id={`${id}-admin-profile-note`} className="mt-1 text-xs text-muted">El perfil de administrador está protegido y no se puede cambiar desde este panel.</p>}
           </div>
           <div {...attrs("reglasAsignacion")} role="group" tabIndex={-1}>
             <UserAssignmentRules
@@ -344,10 +347,13 @@ export default function UserEditor({
               <input
                 type="checkbox"
                 checked={form.activo}
+                disabled={activeProtected}
+                aria-describedby={activeProtected ? `${id}-admin-active-note` : undefined}
                 onChange={(event) => change("activo", event.target.checked)}
               />
               Usuario activo
             </label>
+            {activeProtected && <p id={`${id}-admin-active-note`} className="text-xs text-muted">Las cuentas administradoras activas no se pueden desactivar desde este panel.</p>}
           </div>
           <div className="space-y-3 border-t border-line pt-4">
             <h4 className="text-sm font-semibold">Datos de acceso</h4>

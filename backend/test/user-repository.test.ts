@@ -164,15 +164,55 @@ describe("servicio persistente de usuarios y nombres de garantías", () => {
     expect(mocks.tx.usuarioTipoGarantia.deleteMany).not.toHaveBeenCalled()
   })
 
-  it("reintenta conflictos serializables y vuelve a comprobar el último ADMIN", async () => {
+  it("reintenta conflictos serializables y vuelve a comprobar el perfil ADMIN persistido", async () => {
     mocks.transaction.mockRejectedValueOnce({ code: "P2034" })
     mocks.tx.usuario.findUnique.mockResolvedValue({ ...user, rol: "ADMIN" })
     mocks.tx.usuario.count.mockResolvedValue(1)
     await expect(
       updateManagedUser(user.id, updateSchema.parse(input)),
-    ).rejects.toMatchObject({ code: "LAST_ADMIN" })
+    ).rejects.toMatchObject({ code: "ADMIN_ACCESS_PROTECTED" })
     expect(mocks.transaction).toHaveBeenCalledTimes(2)
     expect(mocks.tx.usuario.update).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    { rol: "LECTOR", activo: true },
+    { rol: "PROFESIONAL", activo: true },
+    { rol: "COORDINADOR_SOME", activo: true },
+    { rol: "ADMIN", activo: false },
+    { rol: "LECTOR", activo: false },
+  ])("rechaza quitar el acceso de cualquier ADMIN aunque existan otros: %j", async (patch) => {
+    mocks.tx.usuario.findUnique.mockResolvedValue({ ...user, rol: "ADMIN" })
+    mocks.tx.usuario.count.mockResolvedValue(3)
+    await expect(updateManagedUser(user.id, updateSchema.parse({ ...input, ...patch }))).rejects.toMatchObject({ code: "ADMIN_ACCESS_PROTECTED", statusCode: 409 })
+    expect(mocks.tx.usuario.update).not.toHaveBeenCalled()
+    expect(mocks.tx.usuarioTipoGarantia.deleteMany).not.toHaveBeenCalled()
+    expect(mocks.tx.sesionUsuario.deleteMany).not.toHaveBeenCalled()
+  })
+
+  it("permite editar los datos y preferencias de un ADMIN conservando su acceso", async () => {
+    mocks.tx.garantia.findMany.mockResolvedValue([])
+    mocks.tx.usuario.findUnique.mockResolvedValue({ ...user, rol: "ADMIN" })
+    await updateManagedUser(user.id, updateSchema.parse({ ...input, rol: "ADMIN", email: "actualizado@example.test", recibirInformeAutomatico: true, reglasAsignacion: [] }))
+    expect(mocks.tx.usuario.update).toHaveBeenCalledWith({ where: { id: user.id }, data: expect.objectContaining({ rol: "ADMIN", activo: true, email: "actualizado@example.test", recibirInformeAutomatico: true }), select: { id: true } })
+    expect(mocks.tx.usuario.update).toHaveBeenCalledWith({ where: { id: user.id }, data: { reglasAsignacion: [] }, select: { id: true } })
+    expect(mocks.tx.sesionUsuario.deleteMany).not.toHaveBeenCalled()
+  })
+
+  it("permite reactivar administradores previos inactivos y protege igualmente su perfil", async () => {
+    mocks.tx.usuario.findUnique.mockResolvedValue({ ...user, rol: "ADMIN", activo: false })
+    await updateManagedUser(user.id, updateSchema.parse({ ...input, rol: "ADMIN", activo: true }))
+    expect(mocks.tx.usuario.update).toHaveBeenCalledWith({ where: { id: user.id }, data: expect.objectContaining({ rol: "ADMIN", activo: true }), select: { id: true } })
+    mocks.tx.usuario.update.mockClear()
+    await expect(updateManagedUser(user.id, updateSchema.parse({ ...input, rol: "LECTOR", activo: false }))).rejects.toMatchObject({ code: "ADMIN_ACCESS_PROTECTED" })
+    expect(mocks.tx.usuario.update).not.toHaveBeenCalled()
+  })
+
+  it("mantiene la promoción a ADMIN y los cambios de perfil de otros usuarios", async () => {
+    for (const rol of ["ADMIN", "COORDINADOR_SOME", "LECTOR"]) {
+      await updateManagedUser(user.id, updateSchema.parse({ ...input, rol }))
+      expect(mocks.tx.usuario.update).toHaveBeenLastCalledWith({ where: { id: user.id }, data: expect.objectContaining({ rol, activo: true }), select: { id: true } })
+    }
   })
 
   it("limita reintentos y devuelve un conflicto que puede recuperar la interfaz", async () => {

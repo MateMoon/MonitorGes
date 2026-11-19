@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 import { createElement, type ComponentType } from "react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 
-const api = vi.hoisted(() => ({ summary: vi.fn(), activity: vi.fn(), current: vi.fn(), logout: vi.fn(), detail: vi.fn() }));
+const api = vi.hoisted(() => ({ summary: vi.fn(), activity: vi.fn(), current: vi.fn(), logout: vi.fn(), detail: vi.fn(), responsibilities: vi.fn(), saveRules: vi.fn() }));
 vi.mock("../../src/services/supervision", () => ({ getSupervisionSummary: api.summary, getSupervisionActivity: api.activity }));
+vi.mock("../../src/services/responsabilidades", () => ({ getResponsibilities: api.responsibilities, saveResponsibilities: api.saveRules }));
 vi.mock("../../src/services/auth", () => ({ getCurrentUser: api.current, logout: api.logout, login: vi.fn() }));
 vi.mock("../../src/services/garantias", async (original) => ({ ...await original<object>(), getGarantiaById: api.detail }));
 vi.mock("../../src/pages/pages1", async (original) => ({
@@ -16,7 +17,7 @@ vi.mock("../../src/pages/pages1", async (original) => ({
 const pagePath = "../../src/pages/SupervisionSome.tsx";
 const appPath = "../../src/App.tsx";
 const apiPath = "../../src/services/api.ts";
-type Props = { isAdmin: boolean; nav: (...args: any[]) => void; onSessionExpired: () => void };
+type Props = { isAdmin: boolean; isCoordinator?: boolean; nav: (...args: any[]) => void; onSessionExpired: () => void };
 const { default: SupervisionSome } = await import(pagePath) as { default: ComponentType<Props> };
 const { default: App } = await import(appPath) as { default: ComponentType };
 const { ApiError } = await import(apiPath);
@@ -52,10 +53,20 @@ const activity = {
 };
 const expired = vi.fn();
 const props = { isAdmin: true, nav, onSessionExpired: expired };
+const responsibilities = {
+  funcionarios: [{ id: "staff-1", nombre: "Funcionaria sintética", rol: "PROFESIONAL", activo: true, revision: "a".repeat(64), reglasAsignacion: [{ problemaSalud: "diabetes", establecimiento: "centro norte", tipoGarantia: "tratamiento" }] }],
+  opciones: { problemasSalud: [{ claveNormalizada: "diabetes", nombre: "Diabetes" }], establecimientos: [{ claveNormalizada: "centro norte", nombre: "Centro Norte" }], tiposGarantia: [{ claveNormalizada: "tratamiento", nombre: "Tratamiento" }] },
+};
+beforeAll(() => {
+  HTMLDialogElement.prototype.showModal = function () { this.setAttribute("open", ""); };
+  HTMLDialogElement.prototype.close = function () { this.removeAttribute("open"); };
+});
 beforeEach(() => {
   vi.resetAllMocks();
   api.summary.mockResolvedValue(structuredClone(summary));
   api.activity.mockResolvedValue(structuredClone(activity));
+  api.responsibilities.mockResolvedValue(structuredClone(responsibilities));
+  api.saveRules.mockImplementation(async (staff: any, rules: any) => ({ ...staff, reglasAsignacion: rules, revision: "b".repeat(64) }));
   api.current.mockResolvedValue({ id: "admin", nombre: "Cuenta de prueba", username: "test", email: "test@example.test", rol: "ADMIN", puedeCargarNominas: false });
   api.logout.mockResolvedValue(undefined);
   api.detail.mockResolvedValue({ id: caseId, nombre: "Caso sintético uno", rut: "00000000", dv: "0", problema: "Diabetes", garantia: "Tratamiento", responsable: "Centro Norte", inicio: new Date("2026-10-01T12:00:00Z"), limite: new Date("2026-11-17T12:00:00Z"), dias: -1, estado: "vencida", estadoGestion: "EN_GESTION", revisionGestion: 0, gestionadaAt: null, gestionadaPor: null, eventos: [] });
@@ -88,7 +99,7 @@ describe("Supervisión SOME: datos y estados de la pantalla", () => {
     expect(screen.queryByText("83")).toBeNull();
     expect(screen.getByRole("list", { name: "Por establecimiento" }).textContent).toContain("Centro Norte");
     expect(screen.queryByRole("button", { name: /Ver todos los casos/ })).toBeNull();
-    expect(screen.queryByText("Responsabilidades")).toBeNull();
+    expect(screen.getByRole("tab", { name: "Responsabilidades" })).toBeTruthy();
     expect(screen.queryByText("Calidad de datos")).toBeNull();
   });
   it("mantiene el orden recibido y abre el detalle por ID con fila y con botón accesible", async () => {
@@ -182,7 +193,7 @@ describe("Supervisión SOME: menú y navegación real de App", () => {
     expect(screen.getByRole("heading", { name: "Información del paciente" })).toBeTruthy();
     expect(api.summary).toHaveBeenCalledTimes(1);
   });
-  it.each(["COORDINADOR_SOME", "PROFESIONAL", "LECTOR"])("%s no ve el menú ni puede entrar mediante navegación interna", async (role) => {
+  it.each(["PROFESIONAL", "LECTOR"])("%s no ve el menú ni puede entrar mediante navegación interna", async (role) => {
     api.current.mockResolvedValue({ id: "restricted", nombre: "Cuenta de prueba", rol: role, puedeCargarNominas: true });
     render(createElement(App));
     const attempt = await screen.findByRole("button", { name: "Intentar acceso directo" });
@@ -196,6 +207,127 @@ describe("Supervisión SOME: menú y navegación real de App", () => {
 const openActivity = async () => {
   await userEvent.setup().click(screen.getByRole("tab", { name: "Gestiones y cambios" }));
 };
+
+const openResponsibilities = async () => {
+  await userEvent.setup().click(screen.getByRole("tab", { name: "Responsabilidades" }));
+  await screen.findByLabelText("Responsabilidades de funcionarios");
+};
+describe("Supervisión SOME: responsabilidades con la configuración compartida", () => {
+  it("no presenta administradores ni permite abrir su editor desde Responsabilidades", async () => {
+    api.responsibilities.mockResolvedValue({ ...responsibilities, funcionarios: [...responsibilities.funcionarios, { ...responsibilities.funcionarios[0], id: "admin", rol: "ADMIN", nombre: "Cuenta administradora protegida" }] });
+    render(createElement(SupervisionSome, props)); await openResponsibilities();
+    expect(screen.queryByText("Cuenta administradora protegida")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Editar reglas de Cuenta administradora protegida" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Editar reglas de Funcionaria sintética" })).toBeTruthy();
+  });
+  it("COORDINADOR entra desde App únicamente a Responsabilidades, sin consultas globales ni Gestión de usuarios", async () => {
+    api.current.mockResolvedValue({ id: "coordinator", nombre: "Cuenta de prueba", rol: "COORDINADOR_SOME", puedeCargarNominas: false });
+    render(createElement(App)); const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Supervisión SOME" }));
+    await screen.findByLabelText("Responsabilidades de funcionarios");
+    expect(screen.getAllByRole("tab")).toHaveLength(1);
+    expect(screen.getByRole("tab", { name: "Responsabilidades" })).toBeTruthy();
+    expect(screen.queryByRole("tab", { name: "Resumen" })).toBeNull();
+    expect(screen.queryByRole("tab", { name: "Gestiones y cambios" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Gestión de usuarios" })).toBeNull();
+    expect(api.summary).not.toHaveBeenCalled(); expect(api.activity).not.toHaveBeenCalled();
+    expect(api.responsibilities).toHaveBeenCalledTimes(1);
+  });
+  it("ADMIN consulta las reglas reales al visitar la pestaña y no repite la consulta al alternar", async () => {
+    render(createElement(SupervisionSome, props));
+    await screen.findByLabelText("Indicadores de supervisión");
+    expect(api.responsibilities).not.toHaveBeenCalled();
+    await openResponsibilities();
+    const list = screen.getByRole("list", { name: "Funcionarios autorizados" });
+    expect(list.textContent).toContain("Funcionaria sintética");
+    expect(list.textContent).toContain("Diabetes · Centro Norte · Tratamiento");
+    await userEvent.setup().click(screen.getByRole("tab", { name: "Resumen" }));
+    await openResponsibilities();
+    expect(api.responsibilities).toHaveBeenCalledTimes(1);
+  });
+  it("permite agregar y eliminar grupos, valida grupos vacíos y requiere guardado explícito para borrar reglas", async () => {
+    render(createElement(SupervisionSome, props)); await openResponsibilities(); const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Editar reglas de Funcionaria sintética" }));
+    expect(screen.queryByLabelText("Perfil de acceso")).toBeNull();
+    expect(screen.queryByLabelText("Correo electrónico")).toBeNull();
+    expect(screen.queryByLabelText("Usuario activo")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Agregar otro grupo" }));
+    await user.click(screen.getByRole("button", { name: "Guardar reglas" }));
+    expect(screen.getByRole("alert").textContent).toContain("Selecciona al menos un criterio");
+    expect(api.saveRules).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Eliminar grupo 2" }));
+    await user.click(screen.getByRole("button", { name: "Limpiar grupo 1" }));
+    expect(api.saveRules).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Guardar reglas" }));
+    await waitFor(() => expect(api.saveRules).toHaveBeenCalledWith(responsibilities.funcionarios[0], []));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByText("Sin reglas de asignación.")).toBeTruthy();
+    expect(api.summary).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole("tab", { name: "Resumen" }));
+    await waitFor(() => expect(api.summary).toHaveBeenCalledTimes(2));
+  });
+  it("edita los criterios con el mismo combolist y conserva los errores sin perder el borrador", async () => {
+    api.saveRules.mockRejectedValueOnce(new ApiError("Servicio temporalmente no disponible", [], "RESPONSIBILITIES_UNAVAILABLE"));
+    render(createElement(SupervisionSome, props)); await openResponsibilities(); const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Editar reglas de Funcionaria sintética" }));
+    await user.click(screen.getByRole("combobox", { name: "Establecimientos, grupo 1" }));
+    await user.click(within(screen.getByRole("listbox", { name: "Opciones de Establecimientos, grupo 1" })).getByRole("option", { name: "Cualquier establecimiento" }));
+    await user.click(screen.getByRole("button", { name: "Guardar reglas" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("Servicio temporalmente no disponible");
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(api.saveRules).toHaveBeenLastCalledWith(responsibilities.funcionarios[0], [{ problemaSalud: "diabetes", establecimiento: "", tipoGarantia: "tratamiento" }]);
+    await user.click(screen.getByRole("button", { name: "Guardar reglas" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.getByRole("list", { name: "Funcionarios autorizados" }).textContent).toContain("Cualquier establecimiento");
+  });
+  it("un conflicto conserva la selección y bloquea el guardado hasta recargar", async () => {
+    api.saveRules.mockRejectedValueOnce(new ApiError("Las reglas cambiaron", [], "STALE_ASSIGNMENT_RULES"));
+    render(createElement(SupervisionSome, props)); await openResponsibilities(); const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Editar reglas de Funcionaria sintética" }));
+    await user.click(screen.getByRole("button", { name: "Guardar reglas" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("Las reglas cambiaron");
+    expect((screen.getByRole("button", { name: "Guardar reglas" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByRole("button", { name: "Quitar Diabetes de Problemas de salud, grupo 1" })).toBeTruthy();
+    expect(api.saveRules).toHaveBeenCalledTimes(1);
+  });
+  it("evita solicitudes duplicadas mientras guarda y protege el borrador al cerrar", async () => {
+    api.saveRules.mockReturnValue(new Promise(() => {}));
+    render(createElement(SupervisionSome, props)); await openResponsibilities(); const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Editar reglas de Funcionaria sintética" }));
+    await user.click(screen.getByRole("button", { name: "Limpiar grupo 1" }));
+    await user.click(screen.getByRole("button", { name: "Cancelar" }));
+    expect(screen.getByRole("alertdialog")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Seguir editando" }));
+    await user.click(screen.getByRole("button", { name: "Guardar reglas" }));
+    expect((screen.getByRole("button", { name: "Guardando…" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Cerrar ventana" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(api.saveRules).toHaveBeenCalledTimes(1);
+  });
+  it.each(["UNAUTHENTICATED", "FORBIDDEN", "RESPONSIBILITIES_UNAVAILABLE"])("trata el error de consulta %s y permite recuperarse", async (code) => {
+    api.responsibilities.mockRejectedValueOnce(new ApiError("Consulta no disponible", [], code));
+    render(createElement(SupervisionSome, { ...props, isAdmin: false, isCoordinator: true }));
+    await screen.findByRole("alert");
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: code === "UNAUTHENTICATED" ? "Volver a iniciar sesión" : code === "FORBIDDEN" ? "Volver al dashboard" : "Reintentar" }));
+    if (code === "UNAUTHENTICATED") expect(expired).toHaveBeenCalledTimes(1);
+    else if (code === "FORBIDDEN") expect(nav).toHaveBeenCalledWith("dashboard");
+    else await screen.findByLabelText("Responsabilidades de funcionarios");
+    expect(api.summary).not.toHaveBeenCalled();
+  });
+  it("presenta una lista vacía real sin funcionarios de respaldo", async () => {
+    api.responsibilities.mockResolvedValue({ ...responsibilities, funcionarios: [] });
+    render(createElement(SupervisionSome, { ...props, isAdmin: false, isCoordinator: true }));
+    expect(await screen.findByText("Sin funcionarios autorizados")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Editar reglas de/ })).toBeNull();
+  });
+  it("muestra carga y cancela la lectura cuando se abandona la pantalla", () => {
+    api.responsibilities.mockReturnValue(new Promise(() => {}));
+    const view = render(createElement(SupervisionSome, { ...props, isAdmin: false, isCoordinator: true }));
+    expect(screen.getByRole("status").textContent).toContain("Cargando responsabilidades");
+    const signal = api.responsibilities.mock.calls[0][0] as AbortSignal;
+    view.unmount(); expect(signal.aborted).toBe(true);
+  });
+});
 describe("Supervisión SOME: gestiones y cambios", () => {
   it("consulta al abrir la pestaña y conserva ambos paneles al alternar sin nuevas solicitudes", async () => {
     render(createElement(SupervisionSome, props));
@@ -250,12 +382,16 @@ describe("Supervisión SOME: gestiones y cambios", () => {
     render(createElement(SupervisionSome, props));
     const summaryTab = screen.getByRole("tab", { name: "Resumen" });
     summaryTab.focus(); fireEvent.keyDown(summaryTab, { key: "ArrowRight" });
+    const responsibilitiesTab = screen.getByRole("tab", { name: "Responsabilidades" });
+    expect(document.activeElement).toBe(responsibilitiesTab);
+    fireEvent.keyDown(responsibilitiesTab, { key: "ArrowRight" });
     const activityTab = screen.getByRole("tab", { name: "Gestiones y cambios" });
     expect(document.activeElement).toBe(activityTab);
     expect(screen.getByRole("tabpanel").getAttribute("aria-labelledby")).toBe(activityTab.id);
     fireEvent.keyDown(activityTab, { key: "Home" }); expect(document.activeElement).toBe(summaryTab);
     fireEvent.keyDown(summaryTab, { key: "End" }); expect(document.activeElement).toBe(activityTab);
-    fireEvent.keyDown(activityTab, { key: "ArrowLeft" }); expect(document.activeElement).toBe(summaryTab);
+    fireEvent.keyDown(activityTab, { key: "ArrowLeft" }); expect(document.activeElement).toBe(responsibilitiesTab);
+    fireEvent.keyDown(responsibilitiesTab, { key: "ArrowLeft" }); expect(document.activeElement).toBe(summaryTab);
     await screen.findByLabelText("Indicadores de supervisión");
   });
   it("muestra carga real y cancela la consulta pendiente al desmontar", async () => {

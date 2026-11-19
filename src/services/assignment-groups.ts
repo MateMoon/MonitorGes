@@ -18,6 +18,12 @@ export const emptyAssignmentGroup = (): AssignmentGroup => ({
 })
 export const isEmptyAssignmentGroup = (group: AssignmentGroup) =>
   dimensions.every((key) => group[key].length === 0)
+
+export function validateAssignmentGroups(groups: AssignmentGroup[]): string | null {
+  if (groups.length > 1 && groups.some(isEmptyAssignmentGroup)) return "Selecciona al menos un criterio en cada grupo o elimina el grupo vacío."
+  if (expandAssignmentGroups(groups).exceedsLimit) return "La selección supera las 1000 combinaciones permitidas. Reduce las opciones seleccionadas."
+  return null
+}
 export function assignmentGroupSize(group: AssignmentGroup): number {
   return isEmptyAssignmentGroup(group)
     ? 0

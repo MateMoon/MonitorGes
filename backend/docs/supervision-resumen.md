@@ -4,8 +4,10 @@
 Sin sesión válida responde 401; los otros tres perfiles reciben 403.
 La respuesta autorizada usa `Cache-Control: no-store`.
 
-El módulo incluye una interfaz exclusiva para ADMIN con las pestañas Resumen y
-Gestiones y cambios. Todas sus consultas son de lectura. No modifica Prisma,
+El módulo incluye Resumen y Gestiones y cambios para ADMIN y la configuración
+compartida de [Responsabilidades](supervision-responsabilidades.md), también
+disponible para COORDINADOR_SOME con alcance restringido. Este endpoint de Resumen
+es de solo lectura y continúa exclusivo de ADMIN. No modifica Prisma,
 migraciones, dashboard, importaciones, reglas, permisos ni envíos de correo.
 El contrato de actividad se documenta en [supervision-eventos.md](supervision-eventos.md).
 
@@ -161,7 +163,8 @@ Estos comandos no necesitan ejecutar migraciones ni enviar correos reales.
 ## Interfaz y comprobación visual
 
 `src/pages/SupervisionSome.tsx` consume el servicio `src/services/supervision.ts`.
-El menú y la navegación interna se restringen a ADMIN, además del guard del backend.
+El acceso al Resumen se restringe a ADMIN, además del guard del backend. Un
+coordinador accede al módulo únicamente para administrar Responsabilidades.
 La pantalla muestra los seis indicadores, el aviso de cobertura, las tres
 distribuciones y la tabla de casos prioritarios con acceso al detalle existente.
 La columna «Funcionarios a cargo» muestra todos los nombres de

@@ -29,27 +29,34 @@ la cabecera puede envolver sus controles en pantallas estrechas.
 
 | Operación | ADMIN | COORDINADOR_SOME | PROFESIONAL / LECTOR |
 |---|---|---|---|
-| Responsabilidades | Cuentas que no sean ADMIN | Solo PROFESIONAL y LECTOR activos | Denegada |
-| Cambiar reglas desde esta pestaña | Solo cuentas que no sean ADMIN | Solo funcionarios del alcance anterior | Denegado |
-| Resumen y Gestiones y cambios globales | Sí | Denegados | Denegados |
+| Responsabilidades | Cuentas que no sean ADMIN | Cuentas que no sean ADMIN | Denegada |
+| Cambiar reglas desde esta pestaña | Solo cuentas que no sean ADMIN | Solo cuentas que no sean ADMIN | Denegado |
+| Resumen y Gestiones y cambios globales | Sí | Sí | Denegados |
 | Gestión de usuarios, roles, correo, actividad y contraseñas | Sí | Denegada | Denegada |
+| Validar, comparar e importar planillas Excel | Incluido por perfil | Incluido por perfil | PROFESIONAL requiere permiso; LECTOR denegado |
 
-El alcance del coordinador fue confirmado para todos los PROFESIONAL y LECTOR
-activos. Se excluyen ADMIN, otros coordinadores y su propia cuenta, incluso al
-enviar manualmente el identificador de destino. Los roles y la actividad del autor
-y destinatario se verifican nuevamente dentro de la transacción. No hay una nueva
-relación de delegación por coordinador ni acceso global a garantías. Las reglas de
-la cuenta coordinadora siguen limitando su propio acceso a los datos.
+La carga de Excel para ADMIN y COORDINADOR_SOME no depende del valor guardado en
+`puedeCargarNominas`. Ese permiso individual se utiliza para PROFESIONAL. El menú
+y el formulario de Gestión de usuarios muestran el permiso incluido en ambos
+perfiles y no permiten desmarcarlo. No se necesita actualizar cuentas existentes
+ni ejecutar una migración para habilitar la carga a los coordinadores.
+
+El perfil visible se denomina Coordinador y tiene el mismo alcance operativo que
+ADMIN, excepto Gestión de usuarios. Ambos pueden editar reglas de cuentas no ADMIN,
+incluidas cuentas coordinadoras e inactivas. El rol y actividad del autor y el perfil
+del destinatario se verifican dentro de la transacción. Las reglas personales de
+Coordinador delimitan sus informes por correo, conservando la vista global de
+garantías. Véase [perfiles-acceso.md](perfiles-acceso.md).
 
 Las cuentas ADMIN tampoco se muestran ni pueden modificarse desde esta pestaña
 cuando el autor es ADMIN. Su configuración se conserva exclusivamente en Gestión
 de usuarios. La restricción se aplica al listado, a la interfaz y a la escritura
 del backend, incluyendo cambios de perfil del destinatario entre lectura y guardado.
 
-La API heredada `/api/areas-responsabilidad` queda exclusiva de ADMIN: su modelo
-de áreas no es el utilizado por las reglas actuales y no debe constituir una vía
-alternativa para que un coordinador modifique cuentas excluidas. No se migran,
-eliminan ni reinterpretan las áreas existentes.
+La API heredada `/api/areas-responsabilidad` admite ADMIN y Coordinador como
+operación de áreas/catálogos. Su modelo no se utiliza para las reglas actuales.
+No se migran, eliminan ni reinterpretan las áreas existentes ni se habilita a
+Coordinador la administración de cuentas mediante esa API.
 
 ## Endpoints
 
@@ -145,9 +152,9 @@ solo lectura y anonimiza nombres antes de presentarlos.
   regresiones de usuarios, áreas, alcance de garantías e informes.
 - Navegador: desde backend, con servidor Vite en 8443 y build del backend,
   `node scripts/check-supervision-visual.mjs --responsibilities --activity`.
-  `--coordinator` verifica la presentación restringida y que no se soliciten
-  Resumen ni actividad global. Si QA no contiene una cuenta coordinadora, solo
-  para esta comprobación visual se filtra una instantánea real leída por ADMIN;
+  `--coordinator` verifica todas las pestañas y la ausencia de Gestión de usuarios.
+  Si QA no contiene una cuenta coordinadora, solo
+  para esta comprobación visual se utiliza una instantánea real leída por ADMIN;
   se informa `coordinatorAuthorizationSimulated: true`. Los permisos reales se
   ejercitan con los guards y repositorios de la aplicación en las pruebas.
 

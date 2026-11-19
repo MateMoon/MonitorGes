@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../../db/prisma.js";
+import { hasGlobalAccess } from "../auth/permissions.js";
 import { normalizeIdentityText } from "../importaciones/identity-normalization.js";
 import { legacyAssignmentRules, readAssignmentRules, matchesAssignmentRules, type AssignedGuarantee, type AssignmentRule } from "./assignment-rules.js";
 
@@ -46,12 +47,12 @@ export async function assignmentScopeForRules(rules: AssignmentRule[], db: Pick<
 
 export async function guaranteeScopeFor(user: GuaranteeViewer, db: AssignmentDatabase = prisma): Promise<Prisma.GarantiaWhereInput> {
   if (!user) throw Object.assign(new Error("Inicia sesión para continuar."), { statusCode: 401 });
-  if (user.rol === "ADMIN") return {};
+  if (hasGlobalAccess(user.rol)) return {};
   return assignmentScopeForRules(await userAssignmentRules(user.id, db), db);
 }
 
 export async function canAccessGuarantee(user: GuaranteeViewer, row: AssignedGuarantee, db: Pick<AssignmentDatabase, "usuario" | "usuarioTipoGarantia"> = prisma) {
   if (!user) return false;
-  if (user.rol === "ADMIN") return true;
+  if (hasGlobalAccess(user.rol)) return true;
   return matchesAssignmentRules(row, await userAssignmentRules(user.id, db));
 }

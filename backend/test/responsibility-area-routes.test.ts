@@ -52,19 +52,19 @@ describe("permisos de áreas de responsabilidad", () => {
     expect(mocks.saveUserAreas).toHaveBeenCalledWith(userId, "user-admin", [{ establecimientoId: "00000000-0000-4000-8000-000000000003", combinacionId: "00000000-0000-4000-8000-000000000004" }]);
   });
 
-  it("el coordinador usa las reglas actuales y no puede acceder al modelo heredado de áreas ni administrar cuentas", async () => {
+  it("el coordinador tiene acceso operativo a áreas y catálogos, pero no a Gestión de usuarios", async () => {
     const headers = { cookie: "ges_session=coordinator" };
     const staff = await app.inject({ method: "GET", url: "/api/areas-responsabilidad/usuarios", headers });
     const areas = await app.inject({ method: "PUT", url: `/api/areas-responsabilidad/usuarios/${userId}`, headers, payload: { areas: [] } });
     const catalog = await app.inject({ method: "POST", url: "/api/areas-responsabilidad/catalogos/establecimiento", headers, payload: { nombre: "Centro ficticio" } });
     const accounts = await app.inject({ method: "GET", url: "/api/usuarios", headers });
-    expect(staff.statusCode).toBe(403);
-    expect(areas.statusCode).toBe(403);
-    expect(catalog.statusCode).toBe(403);
+    expect(staff.statusCode).toBe(200);
+    expect(areas.statusCode).toBe(200);
+    expect(catalog.statusCode).toBe(201);
     expect(accounts.statusCode).toBe(403);
-    expect(mocks.createCatalogEntry).not.toHaveBeenCalled();
-    expect(mocks.saveUserAreas).not.toHaveBeenCalled();
-    expect(mocks.listActiveStaff).not.toHaveBeenCalled();
+    expect(mocks.createCatalogEntry).toHaveBeenCalled();
+    expect(mocks.saveUserAreas).toHaveBeenCalled();
+    expect(mocks.listActiveStaff).toHaveBeenCalled();
   });
 
   it.each(["professional", "reader"] as const)("deniega modificación de áreas a %s", async (role) => {

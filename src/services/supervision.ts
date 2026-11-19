@@ -38,7 +38,7 @@ export interface SupervisionSummary {
     sinProfesionalNoCumplidas: number
   }
   criteriosCobertura: {
-    rol: "PROFESIONAL"
+    rol: "TODOS"
     soloActivos: true
     profesionalesActivos: number
     profesionalesConReglasEfectivas: number
@@ -67,7 +67,7 @@ function validSummary(value: unknown): value is SupervisionSummary {
     if (!object(section) || fields.some((field) => !count(section[field]))) return false
   }
   const criteria = value.criteriosCobertura
-  if (!object(criteria) || criteria.rol !== "PROFESIONAL" || criteria.soloActivos !== true || !count(criteria.profesionalesActivos) || !count(criteria.profesionalesConReglasEfectivas)) return false
+  if (!object(criteria) || criteria.rol !== "TODOS" || criteria.soloActivos !== true || !count(criteria.profesionalesActivos) || !count(criteria.profesionalesConReglasEfectivas)) return false
   const distributions = value.distribuciones
   if (!object(distributions) || distributions.soloNoCumplidas !== true || distributions.permiteSuperposicionEntreProfesionales !== true) return false
   for (const [key, labels] of [["porProblemaSalud", ["problemaSalud"]], ["porEstablecimiento", ["establecimiento"]], ["porProfesional", ["usuarioId", "nombre"]]] as const) {

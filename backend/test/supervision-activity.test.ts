@@ -63,14 +63,15 @@ describe("Gestiones y cambios: autorización y lectura persistida", () => {
     expect((await request()).statusCode).toBe(401);
     expect(prisma.eventoGarantia.findMany).not.toHaveBeenCalled();
   });
-  it.each(["COORDINADOR_SOME", "PROFESIONAL", "LECTOR"])("%s no recibe actividad global aunque tenga permiso de importación", async (rol) => {
+  it.each(["PROFESIONAL", "LECTOR"])("%s no recibe actividad global aunque tenga permiso de importación", async (rol) => {
     memory.session = { ...memory.session, rol, puedeCargarNominas: true };
     const response = await request();
     expect(response.statusCode).toBe(403);
     expect(response.json()).not.toHaveProperty("data");
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
-  it("ADMIN obtiene un vacío real, sin caché, en una transacción de solo lectura", async () => {
+  it.each(["ADMIN", "COORDINADOR_SOME"])("%s obtiene un vacío real, sin caché, en una transacción de solo lectura", async (rol) => {
+    memory.session.rol = rol;
     const response = await request();
     expect(response.statusCode).toBe(200);
     expect(response.headers["cache-control"]).toBe("no-store");

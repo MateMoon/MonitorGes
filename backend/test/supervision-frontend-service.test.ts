@@ -7,7 +7,7 @@ const empty = () => ({
   fechaReferencia: "2026-11-18", zonaHoraria: "America/Santiago", generadoAt: "2026-11-18T13:00:00Z", alcance: "GLOBAL",
   indicadores: { totalGarantias: 0, pendientesResolucion: 0, enGestion: 0, cumplidas: 0, vencidasNoCumplidas: 0, proximas15DiasNoCumplidas: 0 },
   cobertura: { sinProfesional: 0, unProfesional: 0, variosProfesionales: 0, sinProfesionalNoCumplidas: 0 },
-  criteriosCobertura: { rol: "PROFESIONAL", soloActivos: true, profesionalesActivos: 0, profesionalesConReglasEfectivas: 0 },
+  criteriosCobertura: { rol: "TODOS", soloActivos: true, profesionalesActivos: 0, profesionalesConReglasEfectivas: 0 },
   distribuciones: { soloNoCumplidas: true, permiteSuperposicionEntreProfesionales: true, porProblemaSalud: [], porEstablecimiento: [], porProfesional: [] },
   prioritarios: [],
 });

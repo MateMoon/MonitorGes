@@ -59,10 +59,10 @@ describe("Responsabilidades: autorización real y persistencia compartida", () =
     expect((await request("PUT", `/api/supervision/responsabilidades/${id(3)}`, token, { reglasAsignacion: [] })).statusCode).toBe(token === "" || token === "invalid" ? 401 : 403);
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
-  it("COORDINADOR recibe solo PROFESIONAL y LECTOR activos, sin información de administración de cuentas", async () => {
+  it("COORDINADOR recibe las mismas responsabilidades que ADMIN sin información de administración de cuentas", async () => {
     const response = await request("GET");
     expect(response.statusCode).toBe(200); expect(response.headers["cache-control"]).toBe("no-store");
-    expect(response.json().data.funcionarios.map((entry: any) => entry.id)).toEqual([id(3), id(4)]);
+    expect(response.json().data.funcionarios.map((entry: any) => entry.id)).toEqual([id(2), id(3), id(4), id(5), id(6)]);
     expect(response.body).not.toContain("PRIVATE_");
     expect(response.json().data.opciones.establecimientos).toContainEqual({ nombre: "Centro Norte", claveNormalizada: "centro norte" });
   });
@@ -83,9 +83,14 @@ describe("Responsabilidades: autorización real y persistencia compartida", () =
     }
     expect(prisma.usuario.update).not.toHaveBeenCalled();
   });
-  it.each([1, 2, 5, 6, 99])("COORDINADOR no puede modificar la cuenta excluida %i ni adivinando su ID", async (target) => {
+  it.each([1, 99])("COORDINADOR no puede modificar la cuenta excluida %i ni adivinando su ID", async (target) => {
     const response = await request("PUT", `/api/supervision/responsabilidades/${id(target)}`, "coordinator", { reglasAsignacion: [], revision: "a".repeat(64) });
     expect(response.statusCode).toBe(403); expect(prisma.usuario.update).not.toHaveBeenCalled();
+  });
+  it.each([2, 5, 6])("COORDINADOR puede editar las reglas de la cuenta no ADMIN %i como el administrador", async (target) => {
+    const response = await put([], {}, id(target));
+    expect(response.statusCode).toBe(200);
+    expect(memory.users.find((entry) => entry.id === id(target)).reglasAsignacion).toEqual([]);
   });
   it.each(["rol", "email", "password", "activo", "puedeCargarNominas", "actorId", "recibirInformeAutomatico"])("rechaza el campo de administración %s en el endpoint de reglas", async (field) => {
     expect((await put([], { [field]: field === "rol" ? "ADMIN" : false })).statusCode).toBe(400);
@@ -98,7 +103,7 @@ describe("Responsabilidades: autorización real y persistencia compartida", () =
     expect(response.statusCode).toBe(200);
     expect(response.json().data.reglasAsignacion).toEqual([next]);
     expect(memory.users[2]).toEqual({ ...before, reglasAsignacion: [next] });
-    expect((await request("GET")).json().data.funcionarios[0].reglasAsignacion).toEqual([next]);
+    expect((await request("GET")).json().data.funcionarios.find((entry: any) => entry.id === id(3)).reglasAsignacion).toEqual([next]);
     expect((await put([])).statusCode).toBe(200);
     expect(await userAssignmentRules(id(3))).toEqual([]);
     expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), { isolationLevel: "Serializable" });
@@ -122,7 +127,7 @@ describe("Responsabilidades: autorización real y persistencia compartida", () =
   });
   it("mantiene tipos heredados al leer y no los recupera después de guardar reglas vacías", async () => {
     Object.assign(memory.users[2], { reglasAsignacion: null, tiposGarantia: [{ claveNormalizada: "tratamiento", tipoGarantia: { nombre: "Tratamiento", claveNormalizada: "tratamiento" } }] });
-    expect((await request("GET")).json().data.funcionarios[0].reglasAsignacion).toEqual([{ problemaSalud: "", establecimiento: "", tipoGarantia: "tratamiento" }]);
+    expect((await request("GET")).json().data.funcionarios.find((entry: any) => entry.id === id(3)).reglasAsignacion).toEqual([{ problemaSalud: "", establecimiento: "", tipoGarantia: "tratamiento" }]);
     expect((await put([])).statusCode).toBe(200);
     expect(await userAssignmentRules(id(3))).toEqual([]);
   });
@@ -165,8 +170,9 @@ describe("Responsabilidades: autorización real y persistencia compartida", () =
     expect(response.statusCode).toBe(503); expect(response.json()).not.toHaveProperty("data");
     expect(response.body).not.toContain("PRIVATE_"); expect(memory.logs.join("")).not.toContain("PRIVATE_DATABASE_PARAMETERS");
   });
-  it("COORDINADOR sigue sin Resumen, actividad global, gestión de cuentas o escritura de áreas heredadas", async () => {
-    for (const path of ["/api/supervision/resumen", "/api/supervision/eventos", "/api/usuarios", "/api/areas-responsabilidad/usuarios"]) expect((await request("GET", path)).statusCode).toBe(403);
-    for (const path of [`/api/usuarios/${id(3)}`, `/api/usuarios/${id(3)}/contrasena`, `/api/areas-responsabilidad/usuarios/${id(3)}`]) expect((await request("PUT", path, "coordinator", {})).statusCode).toBe(403);
+  it("COORDINADOR sigue sin acceso a Gestión de usuarios ni a cambios de cuentas", async () => {
+    for (const path of ["/api/usuarios", "/api/usuarios/opciones-asignacion", `/api/usuarios/${id(3)}`]) expect((await request("GET", path)).statusCode).toBe(403);
+    for (const path of [`/api/usuarios/${id(3)}`, `/api/usuarios/${id(3)}/contrasena`]) expect((await request("PUT", path, "coordinator", {})).statusCode).toBe(403);
+    expect((await app.inject({ method: "POST", url: "/api/usuarios", headers: { cookie: "ges_session=coordinator" }, payload: {} })).statusCode).toBe(403);
   });
 });

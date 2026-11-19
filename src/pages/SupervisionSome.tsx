@@ -2,7 +2,8 @@ import { useEffect, useId, useState } from "react"
 import { AlertCircle, ArrowUpRight, CheckCircle2, ClipboardList, Clock, Loader2, RefreshCw, Users } from "lucide-react"
 import { ApiError } from "../services/api"
 import { getSupervisionSummary, type SupervisionSummary } from "../services/supervision"
-import { MANAGEMENT } from "../management"
+import { MANAGEMENT, managementPreset } from "../management"
+import { STATUS_ORDER } from "../data"
 import { Btn, Card, CardHeader, Days, Empty, StatusBadge, Th, cx, tdCls } from "../ui"
 import type { Nav } from "./pages1"
 import SupervisionActivityPanel from "./SupervisionActivity"
@@ -14,25 +15,19 @@ function Distribution({ title, rows, overlap = false }: { title: string; rows: {
   const maximum = Math.max(1, ...rows.map((row) => row.cantidad))
   return <Card className="min-w-0 overflow-hidden">
     <CardHeader title={title} sub={overlap ? "Garantías coincidentes no cumplidas" : "Garantías no cumplidas"} />
-    {overlap && <p className="border-b border-line bg-brand-soft/50 px-5 py-3 text-xs text-brand">Una garantía puede coincidir con varios profesionales. Las cantidades pueden superponerse y no deben sumarse como asignaciones exclusivas.</p>}
+    {overlap && <p className="border-b border-line bg-brand-soft/50 px-5 py-3 text-xs text-brand">Una garantía puede coincidir con varios funcionarios, sin importar su perfil. Las cantidades pueden superponerse y no deben sumarse como asignaciones exclusivas.</p>}
     {rows.length ? <ul className="max-h-80 space-y-4 overflow-y-auto p-5" aria-label={title}>
       {rows.map((row) => <li key={row.id}>
         <div className="mb-1.5 flex items-start justify-between gap-3 text-sm"><span className="min-w-0 break-words">{row.label || "Sin información"}</span><span className="tnum shrink-0 font-semibold">{row.cantidad.toLocaleString("es-CL")}</span></div>
         <div aria-hidden="true" className="h-2 overflow-hidden rounded-full bg-canvas"><div className="h-2 rounded-full bg-brand" style={{ width: `${row.cantidad / maximum * 100}%` }} /></div>
       </li>)}
-    </ul> : <p className="px-5 py-8 text-sm text-muted">{overlap ? "No hay profesionales activos con reglas efectivas para mostrar." : "No hay garantías no cumplidas para mostrar."}</p>}
+    </ul> : <p className="px-5 py-8 text-sm text-muted">{overlap ? "No hay usuarios activos con reglas efectivas para mostrar." : "No hay garantías no cumplidas para mostrar."}</p>}
   </Card>
 }
 
 type Props = { isAdmin: boolean; isCoordinator?: boolean; nav: Nav; onSessionExpired: () => void }
 export default function SupervisionSome(props: Props) {
-  const id = useId()
-  if (!props.isAdmin && props.isCoordinator) return <div className="page-in space-y-5">
-    <div><h2 className="text-2xl font-semibold">Supervisión SOME</h2><p className="mt-1 text-sm text-muted">Administración de las reglas de profesionales y lectores activos autorizados.</p></div>
-    <div role="tablist" aria-label="Vistas de supervisión" className="border-b border-line"><button type="button" role="tab" id={`${id}-tab`} aria-selected="true" aria-controls={`${id}-panel`} className="-mb-px border-b-2 border-brand px-4 py-2.5 text-sm font-medium text-brand">Responsabilidades</button></div>
-    <div role="tabpanel" id={`${id}-panel`} aria-labelledby={`${id}-tab`}><SupervisionResponsibilities nav={props.nav} onSessionExpired={props.onSessionExpired} /></div>
-  </div>
-  return <AdminSupervision {...props} />
+  return <AdminSupervision {...props} isAdmin={props.isAdmin || Boolean(props.isCoordinator)} />
 }
 
 const tabs = [["resumen", "Resumen"], ["responsabilidades", "Responsabilidades"], ["actividad", "Gestiones y cambios"]] as const
@@ -63,21 +58,21 @@ function AdminSupervision({ isAdmin, nav, onSessionExpired }: Props) {
     return () => controller.abort()
   }, [isAdmin, attempt])
 
-  if (!isAdmin) return <Card className="p-6"><h2 className="text-lg font-semibold">Acceso restringido</h2><p className="mt-2 text-sm text-muted">Supervisión SOME está disponible únicamente para administradores.</p><Btn className="mt-4" onClick={() => nav("dashboard")}>Volver al dashboard</Btn></Card>
+  if (!isAdmin) return <Card className="p-6"><h2 className="text-lg font-semibold">Acceso restringido</h2><p className="mt-2 text-sm text-muted">Supervisión SOME está disponible para administradores y coordinadores.</p><Btn className="mt-4" onClick={() => nav("dashboard")}>Volver al dashboard</Btn></Card>
 
   const data = state.status === "ready" ? state.data : null
   const cards = data ? [
-    { key: "totalGarantias", label: "Total de garantías", help: "Todas las registradas", color: "text-brand" },
-    { key: "pendientesResolucion", label: "Pendientes de resolución", help: "Situaciones por resolver", color: "text-[#9a4a10]" },
-    { key: "enGestion", label: "En gestión", help: "Con seguimiento activo", color: "text-brand" },
-    { key: "cumplidas", label: "Cumplidas", help: "Cumplimiento acreditado", color: "text-[#256b45]" },
-    { key: "vencidasNoCumplidas", label: "Vencidas no cumplidas", help: "Plazo vencido", color: "text-[#a12a22]" },
-    { key: "proximas15DiasNoCumplidas", label: "Próximas a vencer", help: "De 0 a 15 días · no cumplidas", color: "text-[#9a4a10]" },
+    { key: "totalGarantias", label: "Total de garantías", help: "Todas las registradas", color: "text-brand", open: () => nav("garantias", { estados: [...STATUS_ORDER], soloPendientes: false }) },
+    { key: "pendientesResolucion", label: "Pendientes de resolución", help: "Situaciones por resolver", color: "text-[#9a4a10]", open: () => nav("garantias", managementPreset("PENDIENTE_RESOLUCION")) },
+    { key: "enGestion", label: "En gestión", help: "Con seguimiento activo", color: "text-brand", open: () => nav("garantias", managementPreset("EN_GESTION")) },
+    { key: "cumplidas", label: "Cumplidas", help: "Cumplimiento acreditado", color: "text-[#256b45]", open: () => nav("garantias", managementPreset("CUMPLIDA")) },
+    { key: "vencidasNoCumplidas", label: "Vencidas no cumplidas", help: "Plazo vencido", color: "text-[#a12a22]", open: () => nav("garantias", { estados: ["vencida"], soloPendientes: true }) },
+    { key: "proximas15DiasNoCumplidas", label: "Próximas a vencer", help: "De 0 a 15 días · no cumplidas", color: "text-[#9a4a10]", open: () => nav("garantias", { estados: ["critica", "proxima"], soloPendientes: true }) },
   ] as const : []
 
   return <div className="page-in space-y-5">
     <div className="flex flex-wrap items-start justify-between gap-3">
-      <div><h2 className="text-2xl font-semibold">Supervisión SOME</h2><p className="mt-1 text-sm text-muted">Vista general de las garantías y su cobertura por profesionales activos.</p>
+      <div><h2 className="text-2xl font-semibold">Supervisión SOME</h2><p className="mt-1 text-sm text-muted">Vista general de las garantías y su cobertura por funcionarios activos.</p>
         {data && tab === "resumen" && <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-muted"><Clock className="size-3.5" />Actualizado: {new Intl.DateTimeFormat("es-CL", { dateStyle: "short", timeStyle: "short", timeZone: data.zonaHoraria }).format(new Date(data.generadoAt))} · hora de Santiago</p>}
       </div>
       {state.status === "ready" && tab === "resumen" && <Btn onClick={() => setAttempt((current) => current + 1)}><RefreshCw className="size-4" />Actualizar</Btn>}
@@ -106,17 +101,17 @@ function AdminSupervision({ isAdmin, nav, onSessionExpired }: Props) {
 
     {data && <>
       <section aria-label="Indicadores de supervisión" className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-6">
-        {cards.map((card) => <Card key={card.key} className="p-4"><h3 className="min-h-10 text-xs font-medium text-muted">{card.label}</h3><p className={cx("tnum mt-2 text-3xl font-semibold", card.color)}>{data.indicadores[card.key].toLocaleString("es-CL")}</p><p className="mt-2 text-xs text-muted">{card.help}</p></Card>)}
+        {cards.map((card) => <button key={card.key} type="button" aria-label={`Ver garantías: ${card.label}`} onClick={card.open} className="group relative min-w-0 cursor-pointer rounded-xl border border-line bg-white p-4 text-left shadow-[0_1px_2px_rgba(16,24,40,0.04)] transition hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-2 focus-visible:outline-brand"><h3 className="min-h-10 pr-4 text-xs font-medium text-muted">{card.label}</h3><ArrowUpRight aria-hidden="true" className="absolute right-3 top-4 size-4 text-brand opacity-0 transition group-hover:opacity-100 group-focus-visible:opacity-100" /><p className={cx("tnum mt-2 text-3xl font-semibold", card.color)}>{data.indicadores[card.key].toLocaleString("es-CL")}</p><p className="mt-2 text-xs text-muted">{card.help}</p></button>)}
       </section>
       {data.indicadores.totalGarantias === 0 && <Card><Empty title="Sin garantías registradas" text="El resumen se completará cuando existan garantías importadas en el sistema." /></Card>}
-      {data.cobertura.sinProfesionalNoCumplidas > 0 && <div role="note" className="flex items-start gap-3 rounded-xl border border-[#f3c9a4] bg-[#fff5ec] px-4 py-3 text-sm text-[#7a3d0d]"><Users className="mt-0.5 size-5 shrink-0" /><div><p className="font-semibold">{data.cobertura.sinProfesionalNoCumplidas.toLocaleString("es-CL")} {data.cobertura.sinProfesionalNoCumplidas === 1 ? "garantía no cumplida sin profesional asociado" : "garantías no cumplidas sin profesional asociado"}</p><p className="mt-1">No coinciden con las reglas de ningún profesional activo. Revisa las coberturas configuradas en Gestión de usuarios.</p></div></div>}
+      {data.cobertura.sinProfesionalNoCumplidas > 0 && <div role="note" className="flex items-start gap-3 rounded-xl border border-[#f3c9a4] bg-[#fff5ec] px-4 py-3 text-sm text-[#7a3d0d]"><Users className="mt-0.5 size-5 shrink-0" /><div><p className="font-semibold">{data.cobertura.sinProfesionalNoCumplidas.toLocaleString("es-CL")} {data.cobertura.sinProfesionalNoCumplidas === 1 ? "garantía no cumplida sin funcionario asociado" : "garantías no cumplidas sin funcionario asociado"}</p><p className="mt-1">No coinciden con las reglas de ningún usuario activo. Revisa las coberturas en la pestaña Responsabilidades.</p></div></div>}
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
         <Distribution title="Por problema de salud" rows={data.distribuciones.porProblemaSalud.map((row) => ({ id: row.problemaSalud, label: row.problemaSalud, cantidad: row.cantidad }))} />
         <Distribution title="Por establecimiento" rows={data.distribuciones.porEstablecimiento.map((row) => ({ id: row.establecimiento, label: row.establecimiento, cantidad: row.cantidad }))} />
-        <Distribution title="Garantías coincidentes por profesional" overlap rows={data.distribuciones.porProfesional.map((row) => ({ id: row.usuarioId, label: row.nombre, cantidad: row.cantidad }))} />
+        <Distribution title="Garantías coincidentes por funcionario" overlap rows={data.distribuciones.porProfesional.map((row) => ({ id: row.usuarioId, label: row.nombre, cantidad: row.cantidad }))} />
       </div>
       <Card className="overflow-hidden">
-        <CardHeader title="Casos de atención prioritaria" sub="Hasta 10 garantías no cumplidas: primero vencidas, luego críticas y después sin profesional asociado" right={<ClipboardList className="size-5 shrink-0 text-muted" />} />
+        <CardHeader title="Casos de atención prioritaria" sub="Hasta 10 garantías no cumplidas: primero vencidas, luego críticas y después sin funcionario asociado" right={<ClipboardList className="size-5 shrink-0 text-muted" />} />
         {data.prioritarios.length ? <div className="relative overflow-x-auto"><table className="w-full min-w-[1472px] table-fixed [&_th]:whitespace-normal [&_th]:break-words [&_td]:align-top [&_td]:whitespace-normal [&_td]:[overflow-wrap:anywhere]"><caption className="sr-only">Casos prioritarios de supervisión. Selecciona un paciente o una fila para abrir su detalle.</caption>
           <colgroup><col className="w-32" /><col className="w-40" /><col className="w-48" /><col className="w-56" /><col className="w-56" /><col className="w-48" /><col className="w-36" /><col className="w-40" /><col className="w-12" /></colgroup>
           <thead><tr><Th>Vencimiento</Th><Th>Gestión</Th><Th>Paciente</Th><Th>Problema de salud</Th><Th>Garantía</Th><Th>Establecimiento</Th><Th>Días restantes</Th><Th>Funcionarios a cargo</Th><Th><span className="sr-only">Detalle</span></Th></tr></thead>
@@ -129,8 +124,8 @@ function AdminSupervision({ isAdmin, nav, onSessionExpired }: Props) {
             <td className={tdCls}>{row.profesionalesCoincidentes.length ? <ul className="space-y-2" aria-label="Funcionarios a cargo">{row.profesionalesCoincidentes.map((professional) => <li key={professional.usuarioId} className="flex items-start gap-1.5 text-sm text-brand"><Users aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" /><span className="min-w-0 [overflow-wrap:anywhere]">{professional.nombre}</span></li>)}</ul> : <span className="inline-flex max-w-full whitespace-normal rounded-full bg-[#fdeadb] px-2.5 py-1 text-xs font-medium text-[#9a4a10]">Sin funcionario asociado</span>}</td>
             <td className={tdCls}><ArrowUpRight aria-hidden="true" className="size-4 text-muted group-hover:text-brand" /></td>
           </tr>)}</tbody>
-        </table></div> : <Empty title="Sin casos prioritarios" text="No hay garantías no cumplidas vencidas, críticas o sin coincidencia con profesionales activos." />}
-        {data.prioritarios.length > 0 && <p className="border-t border-line px-5 py-3 text-xs text-muted">Mostrando hasta diez casos, en el orden de prioridad del resumen. Los funcionarios corresponden a los profesionales activos cuyas reglas de cobertura coinciden con la garantía.</p>}
+        </table></div> : <Empty title="Sin casos prioritarios" text="No hay garantías no cumplidas vencidas, críticas o sin coincidencia con usuarios activos." />}
+        {data.prioritarios.length > 0 && <p className="border-t border-line px-5 py-3 text-xs text-muted">Mostrando hasta diez casos, en el orden de prioridad del resumen. Los funcionarios corresponden a los usuarios activos cuyas reglas de cobertura coinciden con la garantía, sin importar su perfil.</p>}
       </Card>
       <p className="flex items-center gap-1.5 text-xs text-muted"><CheckCircle2 className="size-3.5" />Los indicadores de gestión y vencimiento pueden superponerse.</p>
     </>}

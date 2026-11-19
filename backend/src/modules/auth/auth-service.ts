@@ -46,8 +46,16 @@ export async function verifyPassword(password: string, encoded: string | null) {
   }
 }
 
-export async function authenticateUser(username: string, password: string) {
-  const user = await prisma.usuario.findUnique({ where: { username: username.trim() }, select: { id: true, username: true, nombre: true, email: true, rol: true, puedeCargarNominas: true, activo: true, passwordHash: true } });
+const credentialSelect = { id: true, username: true, nombre: true, email: true, rol: true, puedeCargarNominas: true, activo: true, passwordHash: true } as const;
+
+export async function authenticateUser(identifier: string, password: string) {
+  const login = identifier.trim();
+  // Preserve exact username lookup. Email is case-insensitive; reject ambiguous
+  // matches rather than choosing between accounts with equivalent addresses.
+  const candidates = login.includes("@")
+    ? await prisma.usuario.findMany({ where: { OR: [{ username: login }, { email: { equals: login, mode: "insensitive" } }] }, select: credentialSelect, take: 2 })
+    : [await prisma.usuario.findUnique({ where: { username: login }, select: credentialSelect })];
+  const user = candidates.length === 1 ? candidates[0] : null;
   if (!user || !user.activo || !user.passwordHash) {
     await verifyPassword(password, DUMMY_PASSWORD_HASH);
     return null;

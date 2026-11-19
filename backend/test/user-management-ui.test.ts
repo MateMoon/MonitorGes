@@ -217,7 +217,11 @@ describe("Gestión de usuarios: formularios e interacciones", () => {
       screen.getByLabelText("Perfil de acceso"),
       "COORDINADOR_SOME",
     )
-    await user.click(screen.getByLabelText("Puede cargar nóminas"))
+    expect((screen.getByLabelText(/Puede cargar nóminas/) as HTMLInputElement).checked).toBe(true)
+    expect((screen.getByLabelText(/Puede cargar nóminas/) as HTMLInputElement).disabled).toBe(true)
+    expect(screen.getByText("Incluido en el perfil de coordinador.")).toBeTruthy()
+    expect(within(screen.getByLabelText("Perfil de acceso")).getByRole("option", { name: "Coordinador" })).toBeTruthy()
+    await user.click(screen.getByLabelText(/Puede cargar nóminas/))
     await user.click(
       screen.getByLabelText("Recibir informe automático por correo"),
     )
@@ -234,7 +238,7 @@ describe("Gestión de usuarios: formularios e interacciones", () => {
       nombres: "María",
       apellido: "Pérez",
       username: "maria.perez",
-      puedeCargarNominas: true,
+      puedeCargarNominas: false,
       recibirInformeAutomatico: true,
       reglasAsignacion: [
         { problemaSalud: "diabetes", establecimiento: "centro norte", tipoGarantia: "consulta de especialidad" },

@@ -28,7 +28,7 @@ type Toast = (message: string) => void
 const reportLabels = { RESERVADO: 'Reservado', EN_PROCESO: 'En proceso', ACEPTADO_SMTP: 'Aceptado por SMTP; entrega no confirmada', FALLIDO: 'Fallido', OMITIDO: 'Omitido', INCIERTO: 'Resultado incierto; requiere revisión' }
 const roleLabels = {
   ADMIN: "Administrador",
-  COORDINADOR_SOME: "Coordinador SOME",
+  COORDINADOR_SOME: "Coordinador",
   PROFESIONAL: "Profesional gestor",
   LECTOR: "Lector",
 }
@@ -311,7 +311,7 @@ export default function GestionUsuarios({
         ))}
       </div>
       <p className="rounded-lg bg-brand-soft px-4 py-3 text-sm text-brand">
-        Los usuarios ven en Dashboard y Garantías los casos que coinciden con sus reglas; ADMIN conserva la vista general.{' '}
+        Los usuarios ven en Dashboard y Garantías los casos que coinciden con sus reglas; administradores y coordinadores conservan la vista general.{' '}
         Cada cuenta activa con recepción habilitada recibe un informe de las garantías que coinciden con esas mismas reglas.
         Guardar no envía correos. {reportResults ? (reportResults.automaticEnabled ? 'Envío automático habilitado en configuración.' : 'Envío automático deshabilitado.') : 'No se pudo consultar el estado del envío automático.'}
       </p>

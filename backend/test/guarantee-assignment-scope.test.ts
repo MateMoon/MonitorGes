@@ -132,7 +132,7 @@ describe("Dashboard y Garantías según asignaciones de usuario", () => {
   });
   afterAll(async () => { await app.close(); });
 
-  it.each(["reader", "professional", "coordinator"])("%s solo ve sus tipos, aunque no reciba correo ni pueda importar", async (user) => {
+  it.each(["reader", "professional"])("%s solo ve sus tipos, aunque no reciba correo ni pueda importar", async (user) => {
     const list = await get("/api/garantias", user);
     const dashboard = await get("/api/dashboard", user);
     expect(list.statusCode).toBe(200);
@@ -148,13 +148,19 @@ describe("Dashboard y Garantías según asignaciones de usuario", () => {
     expect((await get(`/api/garantias/${id(1)}`, user)).statusCode).toBe(200);
   });
 
-  it("ADMIN ve todo, incluso sin tipos asignados", async () => {
-    memory.assignments.set("admin", []);
-    expect((await get("/api/garantias", "admin")).json().pagination.total).toBe(6);
-    expect((await get("/api/dashboard", "admin")).json().data.total).toBe(6);
-    expect((await get(`/api/garantias/${id(5)}`, "admin")).statusCode).toBe(200);
-    expect((await get("/api/garantias/opciones-filtros", "admin")).json().data.responsables).toHaveLength(3);
+  it.each(["admin", "coordinator"])("%s ve todo, incluso sin tipos asignados", async (role) => {
+    memory.assignments.set(role, []);
+    memory.users.get(role).reglasAsignacion = [];
+    expect((await get("/api/garantias", role)).json().pagination.total).toBe(6);
+    expect((await get("/api/dashboard", role)).json().data.total).toBe(6);
+    expect((await get(`/api/garantias/${id(5)}`, role)).statusCode).toBe(200);
+    expect((await get("/api/garantias/opciones-filtros", role)).json().data.responsables).toHaveLength(3);
     expect(prisma.usuarioTipoGarantia.findMany).not.toHaveBeenCalled();
+  });
+  it("el coordinador puede gestionar una garantía fuera de sus reglas de correo", async () => {
+    memory.users.get("coordinator").reglasAsignacion = [];
+    expect((await manage(4, "coordinator")).statusCode).toBe(200);
+    expect(memory.events).toHaveLength(1);
   });
 
   it("los filtros y la paginación reducen el alcance y los enlaces coinciden con los conteos", async () => {

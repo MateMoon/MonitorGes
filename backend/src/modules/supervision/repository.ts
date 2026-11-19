@@ -14,7 +14,7 @@ export async function readSupervisionSummary(today: string): Promise<Supervision
   return prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SET TRANSACTION READ ONLY`;
     const accounts = await tx.usuario.findMany({
-      where: { activo: true, rol: "PROFESIONAL" },
+      where: { activo: true },
       select: { id: true, nombre: true, reglasAsignacion: true },
       orderBy: { id: "asc" },
     });
@@ -127,7 +127,7 @@ export async function readSupervisionSummary(today: string): Promise<Supervision
     const byCountAndLabel = (a: [string, number], b: [string, number]) => b[1] - a[1] || a[0].localeCompare(b[0], "es");
     return {
       indicadores, cobertura,
-      criteriosCobertura: { rol: "PROFESIONAL", soloActivos: true, profesionalesActivos: accounts.length, profesionalesConReglasEfectivas: professionals.length },
+      criteriosCobertura: { rol: "TODOS", soloActivos: true, profesionalesActivos: accounts.length, profesionalesConReglasEfectivas: professionals.length },
       distribuciones: {
         soloNoCumplidas: true, permiteSuperposicionEntreProfesionales: true,
         porProblemaSalud: [...problems.entries()].sort(byCountAndLabel).map(([problemaSalud, cantidad]) => ({ problemaSalud, cantidad })),

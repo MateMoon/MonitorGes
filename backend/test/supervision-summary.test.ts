@@ -123,14 +123,15 @@ describe("Supervisión SOME: autorización y contrato", () => {
     expect((await request()).statusCode).toBe(401);
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
-  it.each(["COORDINADOR_SOME", "PROFESIONAL", "LECTOR"])("%s no recibe datos globales aunque pueda importar", async (role) => {
+  it.each(["PROFESIONAL", "LECTOR"])("%s no recibe datos globales aunque pueda importar", async (role) => {
     memory.session = { ...memory.session, rol: role, puedeCargarNominas: true };
     const response = await request();
     expect(response.statusCode).toBe(403);
     expect(response.json()).not.toHaveProperty("data");
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
-  it("ADMIN recibe un contrato vacío real y consistente, con una fecha de Santiago y sin escrituras", async () => {
+  it.each(["ADMIN", "COORDINADOR_SOME"])("%s recibe un contrato vacío real y consistente, con una fecha de Santiago y sin escrituras", async (rol) => {
+    memory.session.rol = rol;
     const response = await request();
     expect(response.statusCode).toBe(200);
     expect(response.headers["cache-control"]).toBe("no-store");
@@ -164,14 +165,31 @@ describe("Supervisión SOME: indicadores y cobertura", () => {
     expect(data.distribuciones.porEstablecimiento).toEqual([]);
     expect(data.prioritarios).toEqual([]);
   });
-  it("solo profesionales activos con reglas efectivas cuentan; ADMIN no cubre automáticamente", async () => {
+  it("solo usuarios activos con reglas efectivas cuentan; ningún perfil cubre automáticamente", async () => {
     memory.rows = [guarantee(1, 40)];
-    memory.users = [professional("inactive", [rule()], { activo: false }), professional("admin", [rule()], { rol: "ADMIN" }), professional("coordinator", [rule()], { rol: "COORDINADOR_SOME" }), professional("reader", [rule()], { rol: "LECTOR" }), professional("empty", [])];
+    memory.users = [professional("inactive", [rule()], { activo: false }), professional("admin", [], { rol: "ADMIN" }), professional("coordinator", [], { rol: "COORDINADOR_SOME" }), professional("reader", [], { rol: "LECTOR" }), professional("empty", [])];
     const data = (await request()).json().data;
     expect(data.cobertura.sinProfesionalNoCumplidas).toBe(1);
-    expect(data.criteriosCobertura).toMatchObject({ profesionalesActivos: 1, profesionalesConReglasEfectivas: 0 });
+    expect(data.criteriosCobertura).toMatchObject({ rol: "TODOS", profesionalesActivos: 4, profesionalesConReglasEfectivas: 0 });
     expect(data.distribuciones.porProfesional).toEqual([]);
     expect(data.prioritarios[0]).toMatchObject({ prioridad: 3, motivosPrioridad: ["SIN_PROFESIONAL_ACTIVO"], profesionalesCoincidentes: [] });
+  });
+  it.each(["ADMIN", "COORDINADOR_SOME", "PROFESIONAL", "LECTOR"])("incluye al responsable con perfil %s según sus reglas, sin duplicar coincidencias", async (rol) => {
+    memory.rows = [guarantee(1, -1)];
+    memory.users = [professional("responsible", [rule(), rule("diabetes")], { rol }), professional("empty", [], { rol })];
+    const data = (await request()).json().data;
+    expect(data.distribuciones.porProfesional).toEqual([{ usuarioId: "responsible", nombre: "Profesional responsible", cantidad: 1 }]);
+    expect(data.cobertura).toMatchObject({ sinProfesional: 0, unProfesional: 1, variosProfesionales: 0 });
+    expect(data.prioritarios[0].profesionalesCoincidentes).toEqual([{ usuarioId: "responsible", nombre: "Profesional responsible" }]);
+    expect(data.prioritarios[0].motivosPrioridad).toEqual(["VENCIDA"]);
+  });
+  it("muestra responsables de perfiles distintos y coberturas distintas en un mismo resumen", async () => {
+    memory.users = [professional("professional", [rule("diabetes")]), professional("coordinator", [rule("hipertension")], { rol: "COORDINADOR_SOME" })];
+    memory.rows = [guarantee(1, -1), guarantee(2, -1, "SIN_GESTION", { problemaSalud: "Hipertensión" })];
+    const data = (await request()).json().data;
+    expect(data.distribuciones.porProfesional).toEqual([{ usuarioId: "coordinator", nombre: "Profesional coordinator", cantidad: 1 }, { usuarioId: "professional", nombre: "Profesional professional", cantidad: 1 }]);
+    expect(data.cobertura.sinProfesionalNoCumplidas).toBe(0);
+    expect(data.prioritarios.map((row: any) => row.profesionalesCoincidentes[0].usuarioId)).toEqual(["professional", "coordinator"]);
   });
   it("mantiene reglas heredadas y no recupera tipos anteriores cuando el JSON está vacío", async () => {
     memory.rows = [guarantee(1, 30)];
@@ -202,22 +220,22 @@ describe("Supervisión SOME: indicadores y cobertura", () => {
     expect(data.distribuciones.porProblemaSalud).toEqual([{ problemaSalud: "Diabetes", cantidad: 2 }]);
     expect(data.distribuciones.porEstablecimiento).toEqual([{ establecimiento: "Centro Norte", cantidad: 2 }]);
   });
-  it("devuelve nombres actuales de funcionarios coincidentes y excluye cuentas inactivas, otros roles y reglas ajenas", async () => {
+  it("devuelve nombres actuales de funcionarios de cualquier perfil y excluye cuentas inactivas o reglas ajenas", async () => {
     memory.rows = [guarantee(1, -1)];
     memory.users = [
       professional("z", [rule(), rule("diabetes")], { nombre: "Ana de prueba" }),
       professional("a", [rule()], { nombre: "Zoe de prueba" }),
       professional("inactive", [rule()], { activo: false }),
-      professional("admin", [rule()], { rol: "ADMIN" }),
+      professional("admin", [rule()], { rol: "ADMIN", nombre: "Bruno de prueba" }),
       professional("other", [rule("otro problema")]),
     ];
     const data = (await request()).json().data;
-    expect(data.prioritarios[0].profesionalesCoincidentes).toEqual([{ usuarioId: "z", nombre: "Ana de prueba" }, { usuarioId: "a", nombre: "Zoe de prueba" }]);
-    expect(data.prioritarios[0].cantidadProfesionalesCoincidentes).toBe(2);
+    expect(data.prioritarios[0].profesionalesCoincidentes).toEqual([{ usuarioId: "z", nombre: "Ana de prueba" }, { usuarioId: "admin", nombre: "Bruno de prueba" }, { usuarioId: "a", nombre: "Zoe de prueba" }]);
+    expect(data.prioritarios[0].cantidadProfesionalesCoincidentes).toBe(3);
     expect(data.prioritarios[0].profesionalesCoincidentes[0]).not.toHaveProperty("rules");
     memory.users[1].activo = false;
     memory.users[0].nombre = "Ana de prueba actualizada";
-    expect((await request()).json().data.prioritarios[0]).toMatchObject({ cantidadProfesionalesCoincidentes: 1, profesionalesCoincidentes: [{ usuarioId: "z", nombre: "Ana de prueba actualizada" }] });
+    expect((await request()).json().data.prioritarios[0]).toMatchObject({ cantidadProfesionalesCoincidentes: 2, profesionalesCoincidentes: [{ usuarioId: "z", nombre: "Ana de prueba actualizada" }, { usuarioId: "admin", nombre: "Bruno de prueba" }] });
   });
   it.each([
     { label: "texto", invalid: "bad-json" },

@@ -88,18 +88,19 @@ describe("POST /api/importaciones/validar", () => {
     expect(reader.statusCode).toBe(403);
   });
 
-  it("permite al COORDINADOR_SOME cargar solo cuando tiene permiso persistido", async () => {
+  it.each([true, false])("COORDINADOR_SOME valida y compara por perfil aunque el permiso persistido sea %s", async (puedeCargarNominas) => {
     const form = multipart(await sampleXlsx());
-    authMocks.getSessionUser.mockResolvedValueOnce({ id: "coord", username: "coord", nombre: "Coordinador", email: "coord@example.test", rol: "COORDINADOR_SOME", puedeCargarNominas: true });
+    authMocks.getSessionUser.mockResolvedValueOnce({ id: "coord", username: "coord", nombre: "Coordinador", email: "coord@example.test", rol: "COORDINADOR_SOME", puedeCargarNominas });
     const allowed = await app.inject({ method: "POST", url: "/api/importaciones/validar", headers: { "content-type": form.contentType, origin: "http://localhost:8443", cookie: "ges_session=coord" }, payload: form.body });
     expect(allowed.statusCode).toBe(200);
 
-    authMocks.getSessionUser.mockResolvedValueOnce({ id: "coord", username: "coord", nombre: "Coordinador", email: "coord@example.test", rol: "COORDINADOR_SOME", puedeCargarNominas: false });
-    const denied = await app.inject({ method: "POST", url: "/api/importaciones/validar", headers: { "content-type": form.contentType, origin: "http://localhost:8443", cookie: "ges_session=coord" }, payload: form.body });
-    expect(denied.statusCode).toBe(403);
+    authMocks.getSessionUser.mockResolvedValueOnce({ id: "coord", username: "coord", nombre: "Coordinador", email: "coord@example.test", rol: "COORDINADOR_SOME", puedeCargarNominas });
+    const compared = await app.inject({ method: "POST", url: "/api/importaciones/comparar", headers: { "content-type": form.contentType, origin: "http://localhost:8443", cookie: "ges_session=coord" }, payload: form.body });
+    expect(compared.statusCode).toBe(200);
+    expect(db.write).not.toHaveBeenCalled();
   });
 
-  it("da carga al ADMIN por perfil y limita al COORDINADOR en administración global", async () => {
+  it("da carga por perfil y mantiene Gestión de usuarios exclusiva de ADMIN", async () => {
     const form = multipart(await sampleXlsx());
     authMocks.getSessionUser.mockResolvedValueOnce({ id: "admin", username: "admin", nombre: "Admin", email: "admin@example.test", rol: "ADMIN", puedeCargarNominas: false });
     const uploadAllowed = await app.inject({ method: "POST", url: "/api/importaciones/validar", headers: { "content-type": form.contentType, origin: "http://localhost:8443", cookie: "ges_session=admin" }, payload: form.body });
@@ -114,8 +115,8 @@ describe("POST /api/importaciones/validar", () => {
     const userAdminDenied = await app.inject({ method: "GET", url: "/api/usuarios", headers: { cookie: "ges_session=coord" } });
     expect(userAdminDenied.statusCode).toBe(403);
     authMocks.getSessionUser.mockResolvedValueOnce({ id: "coord", username: "coord", nombre: "Coordinador", email: "coord@example.test", rol: "COORDINADOR_SOME", puedeCargarNominas: false });
-    const configDenied = await app.inject({ method: "PUT", url: "/api/notificaciones/configuracion-correo", headers: { cookie: "ges_session=coord", origin: "http://localhost:8443", "content-type": "application/json" }, payload: { emails: ["ops@example.test"] } });
-    expect(configDenied.statusCode).toBe(403);
+    const invalidConfig = await app.inject({ method: "PUT", url: "/api/notificaciones/configuracion-correo", headers: { cookie: "ges_session=coord", origin: "http://localhost:8443", "content-type": "application/json" }, payload: { emails: ["bad-address"] } });
+    expect(invalidConfig.statusCode).toBe(400);
 
     authMocks.getSessionUser.mockResolvedValueOnce({ id: "coord", username: "coord", nombre: "Coordinador", email: "coord@example.test", rol: "COORDINADOR_SOME", puedeCargarNominas: false });
     const readOnlyOptions = await app.inject({ method: "GET", url: "/api/garantias/opciones-filtros", headers: { cookie: "ges_session=coord" } });

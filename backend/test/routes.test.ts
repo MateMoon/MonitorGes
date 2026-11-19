@@ -119,17 +119,17 @@ describe("API de lectura", () => {
     expect(allowed.headers["access-control-allow-credentials"]).toBe("true");
     expect(denied.headers["access-control-allow-origin"]).toBeUndefined();
   });
-  it("reserva cambios de estado y reapertura a ADMIN en Fastify", async () => {
+  it.each(["admin", "coordinator"])("permite cambios de estado y reapertura a %s en Fastify", async (actor) => {
     const id = "00000000-0000-4000-8000-000000000001";
     for (const operation of ["estado-gestion", "reabrir"]) {
-      for (const role of ["professional", "lector", "coordinator", "invalid"]) {
+      for (const role of ["professional", "lector", "invalid"]) {
         const response = await app.inject({ method: "POST", url: `/api/garantias/${id}/${operation}`, headers: { cookie: `ges_session=${role}`, origin: "http://localhost:8443" }, payload: {} });
         expect(response.statusCode).toBe(role === "invalid" ? 401 : 403);
       }
     }
     expect(mocks.manage).not.toHaveBeenCalled();
     mocks.manage.mockResolvedValue({ estadoGestion: "CUMPLIDA", revisionGestion: 1 });
-    const headers = { cookie: "ges_session=admin", origin: "http://localhost:8443" };
+    const headers = { cookie: `ges_session=${actor}`, origin: "http://localhost:8443" };
     const noEvidence = await app.inject({ method: "POST", url: `/api/garantias/${id}/estado-gestion`, headers, payload: { estadoGestion: "CUMPLIDA", respaldo: " ", revisionGestion: 0 } });
     expect(noEvidence.statusCode).toBe(400);
     const completed = await app.inject({ method: "POST", url: `/api/garantias/${id}/estado-gestion`, headers, payload: { estadoGestion: "CUMPLIDA", respaldo: "Verificado", revisionGestion: 0 } });

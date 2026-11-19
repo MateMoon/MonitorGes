@@ -1,7 +1,7 @@
 # Supervisión SOME — Gestiones y cambios
 
-`GET /api/supervision/eventos` requiere sesión válida y rol ADMIN. Devuelve 401 sin
-sesión válida y 403 para COORDINADOR_SOME, PROFESIONAL y LECTOR. El permiso de cargar
+`GET /api/supervision/eventos` requiere sesión válida y rol ADMIN o Coordinador
+(`COORDINADOR_SOME`). Devuelve 401 sin sesión válida y 403 para PROFESIONAL y LECTOR. El permiso de cargar
 nóminas no otorga acceso. Las respuestas de la consulta usan `Cache-Control: no-store`.
 
 ## Contrato
@@ -82,8 +82,8 @@ importaciones no producen eventos detallados de cambios de campos; no se inventa
 historial de importaciones, asignaciones individuales o cambios de responsables.
 Los antecedentes antiguos se identifican explícitamente. No se implementa
 Calidad de datos. Responsabilidades dispone de su configuración compartida en
-[supervision-responsabilidades.md](supervision-responsabilidades.md), sin ampliar
-el acceso del coordinador a este historial global.
+[supervision-responsabilidades.md](supervision-responsabilidades.md). El coordinador
+también puede consultar este historial global.
 
 Las pruebas de `test/supervision-activity.test.ts`,
 `test/supervision-frontend-service.test.ts` y `test/supervision-ui.test.ts` verifican

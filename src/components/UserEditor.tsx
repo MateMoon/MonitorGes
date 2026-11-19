@@ -12,6 +12,7 @@ import {
 import { Btn, inputCls } from "../ui"
 import UserAssignmentRules from "./UserAssignmentRules"
 import UserModal from "./UserModal"
+import { canUploadNominations, hasGlobalAccess } from "../permissions"
 import { assignmentGroupsFromRules, expandAssignmentGroups, validateAssignmentGroups } from "../services/assignment-groups"
 
 export default function UserEditor({
@@ -107,7 +108,7 @@ export default function UserEditor({
       email: form.email.trim(),
       rol: form.rol,
       puedeCargarNominas:
-        form.rol === "LECTOR" || form.rol === "ADMIN"
+        form.rol !== "PROFESIONAL"
           ? false
           : form.puedeCargarNominas,
       recibirInformeAutomatico: form.recibirInformeAutomatico,
@@ -280,7 +281,7 @@ export default function UserEditor({
               }}
             >
               <option value="ADMIN">Administrador</option>
-              <option value="COORDINADOR_SOME">Coordinador SOME</option>
+              <option value="COORDINADOR_SOME">Coordinador</option>
               <option value="PROFESIONAL">Profesional gestor</option>
               <option value="LECTOR">Lector</option>
             </select>
@@ -297,8 +298,8 @@ export default function UserEditor({
             {fieldError("reglasAsignacion")}
           </div>
           <p className="text-xs text-muted">
-            {form.rol === "ADMIN"
-              ? "El administrador ve todas las garantías. Estas reglas delimitan sus informes por correo."
+            {hasGlobalAccess(form.rol)
+              ? "Este perfil ve todas las garantías. Estas reglas delimitan sus informes por correo."
               : "Cada grupo incluye todas las combinaciones de los problemas, establecimientos y tipos seleccionados. Verá las coincidencias en Dashboard, Garantías e informes por correo. Sin asignaciones no verá garantías."}
           </p>
           <div className="space-y-3 rounded-lg border border-line p-4">
@@ -307,8 +308,8 @@ export default function UserEditor({
               <input
                 type="checkbox"
                 className="mt-0.5"
-                checked={form.rol === "ADMIN" || form.puedeCargarNominas}
-                disabled={form.rol === "ADMIN" || form.rol === "LECTOR"}
+                checked={canUploadNominations(form)}
+                disabled={form.rol !== "PROFESIONAL"}
                 onChange={(event) =>
                   change("puedeCargarNominas", event.target.checked)
                 }
@@ -318,6 +319,11 @@ export default function UserEditor({
                 {form.rol === "ADMIN" && (
                   <span className="block text-xs text-muted">
                     Incluido en el perfil de administrador.
+                  </span>
+                )}
+                {form.rol === "COORDINADOR_SOME" && (
+                  <span className="block text-xs text-muted">
+                    Incluido en el perfil de coordinador.
                   </span>
                 )}
                 {form.rol === "LECTOR" && (
@@ -377,7 +383,7 @@ export default function UserEditor({
               />
               {fieldError("username")}
               <p className="mt-1 text-xs text-muted">
-                Se mantiene el inicio de sesión con usuario y contraseña.
+                Puede iniciar sesión con este usuario o con el correo registrado y su contraseña.
                 {user && " El nombre de usuario no se modifica."}
               </p>
             </div>

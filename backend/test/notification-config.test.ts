@@ -39,10 +39,10 @@ describe("acceso a configuracion de correo", () => {
     expect(mocks.save).not.toHaveBeenCalled();
   });
 
-  it("denies global email configuration changes to COORDINADOR_SOME", async () => {
+  it("permite al coordinador configurar el correo como ADMIN", async () => {
     const response = await app.inject({ method: "PUT", url: "/api/notificaciones/configuracion-correo", headers: { cookie: "ges_session=coord-cookie", origin: "http://localhost:8443" }, payload: { emails: ["ops@example.test"] } });
-    expect(response.statusCode).toBe(403);
-    expect(mocks.save).not.toHaveBeenCalled();
+    expect(response.statusCode).toBe(200);
+    expect(mocks.save).toHaveBeenCalledWith(["ops@example.test"]);
   });
 
   it("permite a ADMIN guardar una direccion valida", async () => {

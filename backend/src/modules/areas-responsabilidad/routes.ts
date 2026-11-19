@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireRoles } from "../auth/routes.js";
+import { hasGlobalAccess, OPERATIONAL_ROLES } from "../auth/permissions.js";
 import { normalizeIdentityText } from "../importaciones/identity-normalization.js";
 import {
   createAllowedCombination,
@@ -13,10 +14,8 @@ import {
   type CatalogKind,
 } from "./repository.js";
 
-// Coordinators manage only the current Usuario.reglasAsignacion via supervision.
-// The legacy areas model must not provide a second path to administrative accounts.
-const authorized = requireRoles("ADMIN");
-const adminOnly = requireRoles("ADMIN");
+const authorized = requireRoles(...OPERATIONAL_ROLES);
+const operational = requireRoles(...OPERATIONAL_ROLES);
 const idSchema = z.string().uuid();
 const areaSchema = z.object({
   establecimientoId: idSchema,
@@ -31,8 +30,8 @@ export async function responsibilityAreaRoutes(app: FastifyInstance) {
   app.get("/usuarios", { preHandler: authorized }, async () => ({ data: await listActiveStaff() }));
 
   app.get("/catalogos", { preHandler: authorized }, async (request) => ({
-    data: await listCatalogs(request.authUser?.rol === "ADMIN"),
-    catalogosEditables: request.authUser?.rol === "ADMIN",
+    data: await listCatalogs(hasGlobalAccess(request.authUser!.rol)),
+    catalogosEditables: hasGlobalAccess(request.authUser!.rol),
   }));
 
   app.get<{ Params: { usuarioId: string } }>("/usuarios/:usuarioId", { preHandler: authorized }, async (request, reply) => {
@@ -57,7 +56,7 @@ export async function responsibilityAreaRoutes(app: FastifyInstance) {
     return { data: result.areas };
   });
 
-  app.post<{ Params: { kind: string }; Body: unknown }>("/catalogos/:kind", { preHandler: adminOnly }, async (request, reply) => {
+  app.post<{ Params: { kind: string }; Body: unknown }>("/catalogos/:kind", { preHandler: operational }, async (request, reply) => {
     const kind = request.params.kind;
     if (kind !== "establecimiento" && kind !== "problemaSalud" && kind !== "tipoGarantia") return reply.code(404).send({ error: { code: "CATALOG_NOT_FOUND", message: "El catálogo solicitado no existe." } });
     const parsed = z.object({ nombre: z.string().trim().min(2).max(180) }).strict().safeParse(request.body);
@@ -70,7 +69,7 @@ export async function responsibilityAreaRoutes(app: FastifyInstance) {
     return reply.code(201).send({ data: created.created });
   });
 
-  app.post<{ Body: unknown }>("/catalogos/combinaciones", { preHandler: adminOnly }, async (request, reply) => {
+  app.post<{ Body: unknown }>("/catalogos/combinaciones", { preHandler: operational }, async (request, reply) => {
     const parsed = z.object({ problemaSaludId: idSchema, tipoGarantiaId: idSchema }).strict().safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: { code: "VALIDATION_ERROR", message: "Selecciona un problema y un tipo de garantía válidos." } });
     const result = await createAllowedCombination(parsed.data.problemaSaludId, parsed.data.tipoGarantiaId);
@@ -79,7 +78,7 @@ export async function responsibilityAreaRoutes(app: FastifyInstance) {
     return reply.code(201).send({ data: result.created });
   });
 
-  app.patch<{ Params: { kind: string; id: string }; Body: unknown }>("/catalogos/:kind/:id", { preHandler: adminOnly }, async (request, reply) => {
+  app.patch<{ Params: { kind: string; id: string }; Body: unknown }>("/catalogos/:kind/:id", { preHandler: operational }, async (request, reply) => {
     const parsedKind = z.enum(catalogKinds).safeParse(request.params.kind);
     const parsedBody = z.object({ activo: z.boolean() }).strict().safeParse(request.body);
     if (!parsedKind.success) return reply.code(404).send({ error: { code: "CATALOG_NOT_FOUND", message: "El catálogo solicitado no existe." } });

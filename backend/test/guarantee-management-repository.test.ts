@@ -112,7 +112,16 @@ describe("seguimiento transaccional (repositorio simulado, sin PostgreSQL)", () 
   });
   it("no amplía permisos internos a perfiles no autorizados", async () => {
     await expect(writeManagement("guarantee-id", professional, complete())).rejects.toMatchObject({ statusCode: 403 });
-    for (const rol of ["LECTOR", "COORDINADOR_SOME"]) await expect(writeManagement("guarantee-id", { ...professional, rol }, action())).rejects.toMatchObject({ statusCode: 403 });
+    await expect(writeManagement("guarantee-id", { ...professional, rol: "LECTOR" }, action())).rejects.toMatchObject({ statusCode: 403 });
+  });
+  it("el coordinador registra actuaciones, cumple y reabre como el administrador", async () => {
+    const coordinator = { id: "coordinator-id", nombre: "Coordinador de prueba", rol: "COORDINADOR_SOME" };
+    await writeManagement("guarantee-id", coordinator, action());
+    await writeManagement("guarantee-id", coordinator, complete());
+    await writeManagement("guarantee-id", coordinator, { operacion: "reabrir", motivo: "Nueva revisión", revisionGestion: db.row.revisionGestion });
+    expect(db.row.estadoGestion).toBe("PENDIENTE_RESOLUCION");
+    expect(db.events.map((event) => event.tipo)).toEqual(["ACTUACION", "CUMPLIMIENTO", "REAPERTURA"]);
+    expect(db.events.every((event) => event.usuarioId === coordinator.id)).toBe(true);
   });
   it("no crea eventos si la garantía no existe", async () => {
     db.row = null;

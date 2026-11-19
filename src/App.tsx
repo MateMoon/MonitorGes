@@ -8,6 +8,7 @@ import { Configuracion, Historial, Importar } from './pages/pages2'
 import { Dashboard, Detalle, Garantias, Login, Logo, type Nav, type Page } from './pages/pages1'
 import { cx } from './ui'
 import SupervisionSome from './pages/SupervisionSome'
+import { canUploadNominations, hasGlobalAccess, ROLE_LABELS } from './permissions'
 
 const MENU: { id: Page; label: string; icon: LucideIcon; title: string }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, title: 'Dashboard' },
@@ -53,6 +54,7 @@ export default function App() {
 
   if (!authReady) return <div className='grid min-h-screen place-items-center text-sm text-muted'>Verificando sesión…</div>
   if (!user) return <Login onLogin={(authenticatedUser) => { setUser(authenticatedUser); nav('dashboard') }} />
+  const globalAccess = hasGlobalAccess(user.rol)
 
   const active = page === 'detalle' ? 'garantias' : page
   const title = page === 'detalle' ? 'Detalle de garantía' : MENU.find((m) => m.id === page)!.title
@@ -66,7 +68,7 @@ export default function App() {
         </div>
         <nav className="mt-2 flex-1 space-y-1 px-3">
           {MENU.filter((m) => {
-            if (m.id === 'importar') return user.rol === 'ADMIN' || user.puedeCargarNominas
+            if (m.id === 'importar') return canUploadNominations(user)
             if (m.id === 'configuracion') return user.rol === 'ADMIN'
             if (m.id === 'supervision') return user.rol === 'ADMIN' || user.rol === 'COORDINADOR_SOME'
             return true
@@ -80,7 +82,7 @@ export default function App() {
         <div className="border-t border-white/10 p-3">
           <div className="flex items-center gap-3 rounded-lg px-2 py-2">
             <span className="grid size-9 shrink-0 place-items-center rounded-full bg-white/15 text-sm font-semibold uppercase">{user.nombre.slice(0, 2)}</span>
-            <div className="hidden min-w-0 leading-tight lg:block"><p className="truncate text-sm font-medium">{user.nombre}</p><p className="text-xs text-white/55">{user.rol === 'ADMIN' ? 'Administrador' : user.rol === 'COORDINADOR_SOME' ? 'Coordinador SOME' : user.rol === 'PROFESIONAL' ? 'Profesional gestor' : 'Lector'}</p></div>
+            <div className="hidden min-w-0 leading-tight lg:block"><p className="truncate text-sm font-medium">{user.nombre}</p><p className="text-xs text-white/55">{ROLE_LABELS[user.rol]}</p></div>
           </div>
           <button onClick={() => { void closeSession() }} title="Cerrar sesión" className="mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-white/65 hover:bg-white/8 hover:text-white">
             <LogOut className="size-[18px]" /><span className="hidden lg:block">Cerrar sesión</span>
@@ -97,9 +99,9 @@ export default function App() {
         </header>
 
         <main key={navKey} className="mx-auto max-w-[1500px] p-6 lg:p-8">
-          {page === 'dashboard' && <Dashboard nav={nav} isAdmin={user.rol === 'ADMIN'} />}
-          {page === 'garantias' && <Garantias nav={nav} isAdmin={user.rol === 'ADMIN'} initial={preset} initialGestion={gestionPreset} initialPending={pendingPreset} />}
-          {page === 'detalle' && <Detalle id={sel} nav={nav} onGestionar={gestionar} canManage={user.rol === 'ADMIN' || user.rol === 'PROFESIONAL'} isAdmin={user.rol === 'ADMIN'} />}
+          {page === 'dashboard' && <Dashboard nav={nav} isAdmin={globalAccess} />}
+          {page === 'garantias' && <Garantias nav={nav} isAdmin={globalAccess} initial={preset} initialGestion={gestionPreset} initialPending={pendingPreset} />}
+          {page === 'detalle' && <Detalle id={sel} nav={nav} onGestionar={gestionar} canManage={globalAccess || user.rol === 'PROFESIONAL'} isAdmin={globalAccess} />}
           {page === 'importar' && <Importar nav={nav} toast={toast} />}
           {page === 'historial' && <Historial />}
           {page === 'supervision' && <SupervisionSome isAdmin={user.rol === 'ADMIN'} isCoordinator={user.rol === 'COORDINADOR_SOME'} nav={nav} onSessionExpired={() => setUser(null)} />}

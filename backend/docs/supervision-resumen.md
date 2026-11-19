@@ -1,13 +1,14 @@
 # Supervisión SOME — contrato del Resumen
 
-`GET /api/supervision/resumen` requiere una sesión válida y rol `ADMIN`.
-Sin sesión válida responde 401; los otros tres perfiles reciben 403.
+`GET /api/supervision/resumen` requiere una sesión válida y rol `ADMIN` o
+`COORDINADOR_SOME` (Coordinador). Sin sesión válida responde 401; Profesional y
+Lector reciben 403.
 La respuesta autorizada usa `Cache-Control: no-store`.
 
-El módulo incluye Resumen y Gestiones y cambios para ADMIN y la configuración
+El módulo incluye Resumen y Gestiones y cambios para ADMIN y Coordinador y la configuración
 compartida de [Responsabilidades](supervision-responsabilidades.md), también
-disponible para COORDINADOR_SOME con alcance restringido. Este endpoint de Resumen
-es de solo lectura y continúa exclusivo de ADMIN. No modifica Prisma,
+disponible para ambos con el mismo alcance. Este endpoint de Resumen
+es de solo lectura. No modifica Prisma,
 migraciones, dashboard, importaciones, reglas, permisos ni envíos de correo.
 El contrato de actividad se documenta en [supervision-eventos.md](supervision-eventos.md).
 
@@ -38,7 +39,7 @@ formato; en ejecución se calculan para cada petición, nunca se usan datos de r
       "sinProfesionalNoCumplidas": 0
     },
     "criteriosCobertura": {
-      "rol": "PROFESIONAL",
+      "rol": "TODOS",
       "soloActivos": true,
       "profesionalesActivos": 0,
       "profesionalesConReglasEfectivas": 0
@@ -72,11 +73,24 @@ Los estados de vencimiento y los días restantes se calculan con los helpers
 existentes. Los indicadores de gestión y vencimiento se superponen; no deben sumarse
 para obtener el total.
 
+Las seis tarjetas abren el listado real de Garantías con el filtro correspondiente:
+total con todos los plazos y estados de gestión; pendientes de resolución, en gestión
+y cumplidas con su estado de gestión y todos los plazos; vencidas no cumplidas con
+plazo vencido y `soloPendientes`; próximas a vencer con plazos crítica/próxima y
+`soloPendientes`. Se reutilizan la navegación y `managementPreset` del dashboard.
+
 ### Cobertura
 
-Solo participan usuarios `PROFESIONAL` activos con reglas efectivas no vacías.
-No se exige recepción de correo ni permiso de importación. ADMIN no proporciona
-cobertura automática, y los otros roles tampoco participan.
+Participan todos los usuarios activos con reglas efectivas no vacías, sin filtrar
+por perfil: ADMIN, Coordinador, Profesional y Lector. No se exige recepción de
+correo ni permiso de importación. El acceso global de ADMIN o Coordinador no
+proporciona cobertura automática: también deben tener reglas coincidentes.
+
+`criteriosCobertura.rol` es `TODOS`. Para conservar compatibilidad se mantienen
+los nombres históricos `profesionalesActivos`, `profesionalesConReglasEfectivas`,
+`porProfesional`, `cantidadProfesionalesCoincidentes`, `profesionalesCoincidentes`,
+los campos de `cobertura` y el motivo `SIN_PROFESIONAL_ACTIVO`. Todos se refieren
+ahora a funcionarios/usuarios de cualquier perfil, no solo al rol PROFESIONAL.
 
 Se reutilizan `userAssignmentRules()`, `matchesAssignmentRules()` y
 `assignmentScopeForRules()`, conservando criterios abiertos, normalización y tipos
@@ -103,10 +117,10 @@ El establecimiento se obtiene de `Garantia.responsable`. Problemas y establecimi
 se agrupan por el texto almacenado; las variantes ortográficas pueden aparecer como
 barras distintas, aunque las reglas las reconozcan como equivalentes.
 
-Cada profesional cuenta una garantía una sola vez aunque tenga varias reglas
-coincidentes. Distintos profesionales pueden contar la misma garantía. El frontend
-debe mostrar «Garantías coincidentes por profesional», no asignaciones exclusivas ni
-una distribución porcentual sumable. Se incluyen profesionales con reglas efectivas
+Cada funcionario cuenta una garantía una sola vez aunque tenga varias reglas
+coincidentes. Distintos funcionarios pueden contar la misma garantía. El frontend
+muestra «Garantías coincidentes por funcionario», no asignaciones exclusivas ni
+una distribución porcentual sumable. Se incluyen usuarios con reglas efectivas
 y cero coincidencias. Orden: cantidad descendente, nombre e identificador.
 
 ### Prioritarios
@@ -115,7 +129,7 @@ Hasta diez garantías no cumplidas, con este orden:
 
 1. Vencidas.
 2. Críticas: 0–7 días incluidos.
-3. Sin profesional coincidente y con más de siete días restantes.
+3. Sin funcionario coincidente y con más de siete días restantes.
 
 Dentro de cada grupo se ordena por fecha límite ascendente (equivalente a días
 restantes) y luego por identificador ascendente. Los grupos son excluyentes: una
@@ -130,8 +144,8 @@ vencida sin cobertura aparece una vez, con los dos motivos.
 | `estadoGestion` | `SIN_GESTION`, `EN_GESTION` o `PENDIENTE_RESOLUCION` |
 | `estadoVencimiento` | `vencida`, `critica`, `proxima`, `atencion` o `normal` |
 | `diasRestantes` | Entero, negativo cuando está vencida |
-| `cantidadProfesionalesCoincidentes` | Número de profesionales distintos |
-| `profesionalesCoincidentes` | Array de `{ usuarioId, nombre }` de profesionales activos cuyas reglas coinciden; orden por nombre e ID, sin repetir una cuenta por varias reglas |
+| `cantidadProfesionalesCoincidentes` | Número de funcionarios distintos, sin filtrar por perfil |
+| `profesionalesCoincidentes` | Array de `{ usuarioId, nombre }` de usuarios activos cuyas reglas coinciden; orden por nombre e ID, sin repetir una cuenta por varias reglas |
 | `motivosPrioridad` | Array de `VENCIDA`, `CRITICA`, `SIN_PROFESIONAL_ACTIVO` |
 | `prioridad` | Grupo 1, 2 o 3 |
 
@@ -163,8 +177,7 @@ Estos comandos no necesitan ejecutar migraciones ni enviar correos reales.
 ## Interfaz y comprobación visual
 
 `src/pages/SupervisionSome.tsx` consume el servicio `src/services/supervision.ts`.
-El acceso al Resumen se restringe a ADMIN, además del guard del backend. Un
-coordinador accede al módulo únicamente para administrar Responsabilidades.
+El acceso al Resumen se restringe a ADMIN y Coordinador, además del guard del backend.
 La pantalla muestra los seis indicadores, el aviso de cobertura, las tres
 distribuciones y la tabla de casos prioritarios con acceso al detalle existente.
 La columna «Funcionarios a cargo» muestra todos los nombres de

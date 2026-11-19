@@ -1,4 +1,5 @@
 import { prisma } from "../../db/prisma.js";
+import { hasGlobalAccess } from "../auth/permissions.js";
 import { decideManagement, ManagementError, type ManagementCommand } from "./management.js";
 import { canAccessGuarantee } from "./assignment-scope.js";
 
@@ -7,7 +8,7 @@ export const eventSelect = { id: true, secuencia: true, tipo: true, tipoActuacio
 
 export async function writeManagement(id: string, user: { id: string; nombre: string; rol: string }, command: ManagementCommand) {
   // Defensa adicional para llamadas internas, además de los guards de Fastify.
-  const authorized = command.operacion === "actuacion" ? ["ADMIN", "PROFESIONAL"].includes(user.rol) : user.rol === "ADMIN";
+  const authorized = hasGlobalAccess(user.rol) || (command.operacion === "actuacion" && user.rol === "PROFESIONAL");
   if (!authorized) throw new ManagementError("FORBIDDEN", "No tienes permisos para realizar esta acción.", 403);
   return prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT "id" FROM "Garantia" WHERE "id" = ${id}::uuid FOR UPDATE`;

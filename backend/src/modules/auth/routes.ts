@@ -1,13 +1,15 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { authenticateUser, createSession, getSessionUser, revokeSession, type SafeUser } from "./auth-service.js";
+import { hasGlobalAccess } from "./permissions.js";
 
 declare module "fastify" {
   interface FastifyRequest { authUser: SafeUser | null; }
 }
 
 const COOKIE_NAME = "ges_session";
-const loginSchema = z.object({ username: z.string().trim().min(1).max(100), password: z.string().min(1).max(1024) }).strict();
+// Keep the existing request field for compatibility; it accepts username or email.
+const loginSchema = z.object({ username: z.string().trim().min(1).max(254), password: z.string().min(1).max(1024) }).strict();
 const attempts = new Map<string, { failures: number; blockedUntil: number; startedAt: number }>();
 const WINDOW_MS = 15 * 60 * 1000;
 const BLOCK_MS = 15 * 60 * 1000;
@@ -94,11 +96,11 @@ export function requireRoles(...roles: SafeUser["rol"][]) {
 }
 
 /**
- * ADMIN puede cargar nóminas por perfil. Para el resto de perfiles operativos
- * se exige el permiso persistido en Usuario; LECTOR nunca puede importar.
+ * ADMIN y COORDINADOR_SOME pueden cargar nóminas por perfil. PROFESIONAL
+ * requiere el permiso persistido en Usuario; LECTOR nunca puede importar.
  */
 export function canUploadNominations(user: Pick<SafeUser, "rol" | "puedeCargarNominas"> | null): boolean {
-  return Boolean(user && (user.rol === "ADMIN" || (user.rol !== "LECTOR" && user.puedeCargarNominas)));
+  return Boolean(user && (hasGlobalAccess(user.rol) || (user.rol === "PROFESIONAL" && user.puedeCargarNominas)));
 }
 
 export async function requireImportPermission(request: FastifyRequest, reply: FastifyReply) {
@@ -112,7 +114,7 @@ export async function requireImportPermission(request: FastifyRequest, reply: Fa
 export async function authRoutes(app: FastifyInstance) {
   app.post<{ Body: unknown }>("/login", async (request, reply) => {
     const parsed = loginSchema.safeParse(request.body);
-    if (!parsed.success) return reply.code(400).send({ error: { code: "VALIDATION_ERROR", message: "Ingresa usuario y contraseña.", details: [] }, requestId: request.id });
+    if (!parsed.success) return reply.code(400).send({ error: { code: "VALIDATION_ERROR", message: "Ingresa tu usuario o correo y contraseña.", details: [] }, requestId: request.id });
     const keys = attemptKeys(request, parsed.data.username);
     pruneLoginAttempts();
     if (keys.some(({ key }) => !checkLoginAllowed(key))) return reply.code(429).send({ error: { code: "LOGIN_RATE_LIMITED", message: "Demasiados intentos. Espera 15 minutos antes de volver a intentar.", details: [] }, requestId: request.id });
@@ -125,7 +127,7 @@ export async function authRoutes(app: FastifyInstance) {
     if (!user) {
       for (const { key, maximum } of keys) recordLoginFailure(key, maximum);
       request.log.warn({ ip: request.ip }, "Intento de inicio de sesión rechazado.");
-      return reply.code(401).send({ error: { code: "INVALID_CREDENTIALS", message: "Usuario o contraseña incorrectos.", details: [] }, requestId: request.id });
+      return reply.code(401).send({ error: { code: "INVALID_CREDENTIALS", message: "Datos de acceso incorrectos.", details: [] }, requestId: request.id });
     }
     attempts.delete(keys[0].key);
     let session: Awaited<ReturnType<typeof createSession>>;

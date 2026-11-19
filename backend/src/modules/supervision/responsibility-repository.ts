@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { hasGlobalAccess } from "../auth/permissions.js";
 import type { Prisma } from "@prisma/client";
 import { readAssignmentRules, legacyAssignmentRules, type AssignmentRule } from "../garantias/assignment-rules.js";
 import { listAssignmentOptions, saveAssignmentRules, userTransaction, UserManagementError } from "../usuarios/repository.js";
@@ -19,23 +20,23 @@ function staffData(row: StaffRecord) {
 
 async function currentActor(tx: Prisma.TransactionClient, id: string): Promise<Actor> {
   const actor = await tx.usuario.findUnique({ where: { id }, select: { id: true, rol: true, activo: true } });
-  if (!actor?.activo || !["ADMIN", "COORDINADOR_SOME"].includes(actor.rol)) throw new UserManagementError("FORBIDDEN", "No tienes permiso para administrar responsabilidades.", 403);
+  if (!actor?.activo || !hasGlobalAccess(actor.rol)) throw new UserManagementError("FORBIDDEN", "No tienes permiso para administrar responsabilidades.", 403);
   return actor;
 }
-function staffScope(actor: Actor): Prisma.UsuarioWhereInput {
-  return actor.rol === "ADMIN" ? { rol: { not: "ADMIN" } } : { activo: true, rol: { in: ["PROFESIONAL", "LECTOR"] }, id: { not: actor.id } };
+function staffScope(): Prisma.UsuarioWhereInput {
+  return { rol: { not: "ADMIN" } };
 }
 function canEdit(actor: Actor, target: StaffRecord) {
   if (target.rol === "ADMIN") return false;
-  return actor.rol === "ADMIN" || (target.id !== actor.id && target.activo && ["PROFESIONAL", "LECTOR"].includes(target.rol));
+  return hasGlobalAccess(actor.rol);
 }
 
 export async function readResponsibilities(actorId: string) {
   return userTransaction(async (tx) => {
     await tx.$executeRaw`SET TRANSACTION READ ONLY`;
-    const actor = await currentActor(tx, actorId);
+    await currentActor(tx, actorId);
     const [staff, opciones] = await Promise.all([
-      tx.usuario.findMany({ where: staffScope(actor), select: staffSelect, orderBy: [{ activo: "desc" }, { nombre: "asc" }, { id: "asc" }] }),
+      tx.usuario.findMany({ where: staffScope(), select: staffSelect, orderBy: [{ activo: "desc" }, { nombre: "asc" }, { id: "asc" }] }),
       listAssignmentOptions(tx),
     ]);
     return { funcionarios: staff.map(staffData), opciones };

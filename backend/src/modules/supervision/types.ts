@@ -28,7 +28,8 @@ export interface SupervisionSummary {
     vencidasNoCumplidas: number;
     proximas15DiasNoCumplidas: number;
   };
-  /** The first three buckets partition all guarantees, including completed ones. */
+  /** Historical field names retained: all active users with rules count, regardless of role.
+   * The first three buckets partition all guarantees, including completed ones. */
   cobertura: {
     sinProfesional: number;
     unProfesional: number;
@@ -36,7 +37,7 @@ export interface SupervisionSummary {
     sinProfesionalNoCumplidas: number;
   };
   criteriosCobertura: {
-    rol: "PROFESIONAL";
+    rol: "TODOS";
     soloActivos: true;
     profesionalesActivos: number;
     profesionalesConReglasEfectivas: number;

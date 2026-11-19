@@ -68,7 +68,7 @@ export default function SeguimientoGarantia({ guarantee, canManage, isAdmin, onG
             <Btn type="submit" variant="primary" disabled={busy || target === guarantee.estadoGestion || (target === 'CUMPLIDA' && !respaldo.trim())}>Confirmar cambio de estado</Btn>
           </form>}
         </Card>}
-        {completed && !isAdmin && <p className="rounded-lg bg-canvas p-4 text-sm text-muted">Un administrador debe reabrir la garantía antes de registrar nuevas actuaciones.</p>}
+        {completed && !isAdmin && <p className="rounded-lg bg-canvas p-4 text-sm text-muted">Un administrador o coordinador debe reabrir la garantía antes de registrar nuevas actuaciones.</p>}
         {!canManage && <p className="text-sm text-muted">Tu perfil permite consultar el seguimiento.</p>}
       </div>
       <Card><CardHeader title="Historial de gestiones y cambios" sub={`${events.length} registros · hora de Santiago`} right={<History className="size-4 text-muted" />} />

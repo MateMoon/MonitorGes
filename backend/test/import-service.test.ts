@@ -101,6 +101,15 @@ describe("importación persistente", () => {
   const app = buildApp();
   beforeAll(async () => { await app.ready(); });
   afterAll(async () => { await app.close(); });
+  it("COORDINADOR_SOME importa una planilla por perfil aunque el permiso individual esté desmarcado", async () => {
+    authMocks.getSessionUser.mockResolvedValueOnce({ id: "coordinator-1", username: "coord", nombre: "Coordinador de prueba", email: "coord@example.test", rol: "COORDINADOR_SOME", puedeCargarNominas: false });
+    const form = multipart(await makeXlsx([baseRow]));
+    const response = await app.inject({ method: "POST", url: "/api/importaciones", headers: { "content-type": form.contentType, origin: "http://localhost:8443", cookie: "ges_session=coordinator" }, payload: form.body });
+    expect(response.statusCode).toBe(201);
+    expect(response.json().data).toMatchObject({ registrosNuevos: 1, registrosConError: 0 });
+    expect(memory.guarantees).toHaveLength(1);
+    expect(memory.imports[0].usuarioId).toBe("coordinator-1");
+  });
   it("publica los cambios importados en Garantías, Dashboard e Historial mediante sus APIs", async () => {
     const form = multipart(await makeXlsx([baseRow]));
     const imported = await app.inject({ method: "POST", url: "/api/importaciones", headers: { "content-type": form.contentType, origin: "http://localhost:8443", cookie: "ges_session=professional" }, payload: form.body });

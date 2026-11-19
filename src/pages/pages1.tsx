@@ -50,10 +50,10 @@ export function Login({ onLogin }: { onLogin: (user: AuthUser) => void }) {
       <div className="flex items-center justify-center p-8">
         <form onSubmit={submit} className="w-full max-w-sm page-in">
           <div className="mb-8 flex items-center gap-3 lg:hidden"><Logo /><span className="font-semibold">Servicio de Salud</span></div>
-          <h1 className="text-2xl font-semibold">Monitor de Garantías GES</h1><p className="mt-1.5 text-sm text-muted">Ingrese con su cuenta institucional.</p>
+          <h1 className="text-2xl font-semibold">Monitor de Garantías GES</h1><p className="mt-1.5 text-sm text-muted">Ingrese con su usuario o correo institucional.</p>
           {error && <div role="alert" className="mt-6 flex items-start gap-2.5 rounded-lg border border-[#f1b9b4] bg-[#fbe7e5] px-3.5 py-3 text-sm text-[#a12a22]"><AlertCircle className="mt-0.5 size-4 shrink-0" /><span>{error}</span></div>}
           <div className="mt-6 space-y-4">
-            <label className="block"><span className="mb-1.5 block text-sm font-medium">Usuario</span><div className="relative"><User className="absolute left-3 top-2.5 size-4 text-muted" /><input required autoComplete="username" className={cx(inputCls, 'pl-9')} value={u} onChange={(e) => setU(e.target.value)} placeholder="nombre.apellido" autoFocus /></div></label>
+            <label className="block"><span className="mb-1.5 block text-sm font-medium">Usuario o correo electrónico</span><div className="relative"><User aria-hidden="true" className="absolute left-3 top-2.5 size-4 text-muted" /><input required type="text" maxLength={254} autoComplete="username" autoCapitalize="none" spellCheck={false} className={cx(inputCls, 'pl-9')} value={u} onChange={(e) => setU(e.target.value)} placeholder="nombre.apellido o correo@institucion.cl" autoFocus /></div></label>
             <div>
               <label htmlFor={passwordId} className="mb-1.5 block text-sm font-medium">Contraseña</label>
               <div className="relative">

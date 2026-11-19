@@ -33,13 +33,42 @@ describe("sesion de autenticacion", () => {
     mocks.authenticateUser.mockResolvedValueOnce(null);
     const response = await app.inject({ method: "POST", url: "/api/auth/login", headers: { origin: "http://localhost:8443" }, payload: { username: "missing", password: "wrong" } });
     expect(response.statusCode).toBe(401);
-    expect(response.json().error.message).toBe("Usuario o contraseña incorrectos.");
+    expect(response.json().error.message).toBe("Datos de acceso incorrectos.");
   });
 
   it("rechaza origenes no configurados en operaciones con cookie", async () => {
     const response = await app.inject({ method: "POST", url: "/api/auth/login", headers: { origin: "https://evil.example" }, payload: { username: "admin", password: "long-password-example" } });
     expect(response.statusCode).toBe(403);
     expect(mocks.authenticateUser).not.toHaveBeenCalled();
+  });
+
+  it("acepta el correo registrado en el campo de acceso existente y crea la misma sesión", async () => {
+    const response = await app.inject({ method: "POST", url: "/api/auth/login", headers: { origin: "http://localhost:8443" }, payload: { username: "  ADMIN@example.test  ", password: "long-password-example" } });
+    expect(response.statusCode).toBe(200);
+    expect(mocks.authenticateUser).toHaveBeenCalledWith("ADMIN@example.test", "long-password-example");
+    expect(mocks.createSession).toHaveBeenCalledWith(user.id);
+    expect(response.json().data.user.username).toBe("admin");
+    expect(response.headers["set-cookie"]).toContain("HttpOnly");
+  });
+
+  it("acepta correos de hasta 254 caracteres y rechaza entradas mayores o vacías", async () => {
+    const email = `${"a".repeat(64)}@${"b".repeat(63)}.${"c".repeat(63)}.${"d".repeat(61)}`;
+    expect(email).toHaveLength(254);
+    expect((await app.inject({ method: "POST", url: "/api/auth/login", headers: { origin: "http://localhost:8443" }, payload: { username: email, password: "test-password" } })).statusCode).toBe(200);
+    mocks.authenticateUser.mockClear();
+    for (const username of [" ", `${email}x`]) expect((await app.inject({ method: "POST", url: "/api/auth/login", headers: { origin: "http://localhost:8443" }, payload: { username, password: "test-password" } })).statusCode).toBe(400);
+    expect(mocks.authenticateUser).not.toHaveBeenCalled();
+  });
+
+  it("mantiene el límite de intentos al variar las mayúsculas del correo", async () => {
+    mocks.authenticateUser.mockResolvedValue(null);
+    for (let index = 0; index < 5; index++) {
+      const username = index % 2 ? "admin@example.test" : "ADMIN@EXAMPLE.TEST";
+      expect((await app.inject({ method: "POST", url: "/api/auth/login", headers: { origin: "http://localhost:8443" }, payload: { username, password: "incorrect" } })).statusCode).toBe(401);
+    }
+    const limited = await app.inject({ method: "POST", url: "/api/auth/login", headers: { origin: "http://localhost:8443" }, payload: { username: "Admin@Example.Test", password: "incorrect" } });
+    expect(limited.statusCode).toBe(429);
+    expect(mocks.createSession).not.toHaveBeenCalled();
   });
 
   it("limita intentos repetidos", async () => {

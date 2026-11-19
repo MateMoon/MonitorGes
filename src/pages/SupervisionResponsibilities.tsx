@@ -45,7 +45,7 @@ function RuleEditor({ staff, options, onClose, onSaved, onSessionExpired }: {
 }
 
 type State = { status: "loading" } | { status: "ready"; data: Responsibilities } | { status: "error"; message: string; code?: string }
-const roleLabel = { ADMIN: "Administrador", COORDINADOR_SOME: "Coordinador SOME", PROFESIONAL: "Profesional gestor", LECTOR: "Lector" }
+const roleLabel = { ADMIN: "Administrador", COORDINADOR_SOME: "Coordinador", PROFESIONAL: "Profesional gestor", LECTOR: "Lector" }
 function groupLabels(staff: ResponsibilityStaff, options: AssignmentOptions) {
   return assignmentGroupsFromRules(staff.reglasAsignacion).map((group) => [
     [group.problemasSalud, options.problemasSalud, "Cualquier problema"],
@@ -87,7 +87,7 @@ export default function SupervisionResponsibilities({ nav, onSessionExpired, onR
       </Card>
       <Card className="min-w-0"><CardHeader title="Alcance de las responsabilidades" right={<ShieldCheck className="size-5 shrink-0 text-muted" />} /><div className="space-y-4 p-5 text-sm text-muted">
         <p>Combina problema de salud, establecimiento y tipo de garantía. Cada grupo reúne todas las combinaciones seleccionadas; varios grupos amplían las coincidencias.</p>
-        <p>Las reglas delimitan las garantías visibles en el dashboard, listado y detalle, las que se pueden gestionar según el perfil y las que aparecen en los informes individuales. Las cuentas administradoras se configuran exclusivamente desde Gestión de usuarios.</p>
+        <p>En profesionales y lectores, las reglas delimitan las garantías visibles y el contenido de los informes individuales. Administradores y coordinadores conservan la vista global; sus reglas delimitan únicamente los informes individuales por correo. Las cuentas administradoras se configuran exclusivamente desde Gestión de usuarios.</p>
         <p>Los cambios solo se aplican al pulsar Guardar reglas. Esta pestaña permite administrar coberturas, sin cambiar datos de acceso ni asignar garantías individuales.</p>
       </div></Card>
     </div>

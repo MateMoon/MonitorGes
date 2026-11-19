@@ -23,6 +23,8 @@ if (!executable) throw new Error("NO_LOCAL_BROWSER");
 const browser = spawn(executable, ["--headless=new", "--disable-gpu", "--no-first-run", "--no-default-browser-check", "--disable-background-networking", "--disable-sync", "--disable-extensions", "--disable-crash-reporter", "--remote-debugging-port=0", `--user-data-dir=${path.join(folder, "profile")}`, "about:blank"], { windowsHide: true, stdio: "ignore" });
 let socket;
 let browserSocket;
+let phase = "START";
+let captureFailure;
 try {
   let port;
   for (let attempt = 0; attempt < 100; attempt++) {
@@ -42,13 +44,13 @@ try {
     if (socket.readyState !== WebSocket.OPEN) { pending.delete(id); reject(new Error("CDP_SOCKET_CLOSED")); return; }
     socket.send(JSON.stringify({ id, method, params }));
   });
-  const original = coordinator ? null : (await supervision.getSupervisionSummary()).data;
+  const original = (await supervision.getSupervisionSummary()).data;
   const summary = structuredClone(original);
   summary?.prioritarios.forEach((row, index) => {
     row.paciente = { nombre: `Caso ${index + 1} · identidad reservada` };
     row.profesionalesCoincidentes.forEach((professional) => { professional.nombre = "Funcionario de revisión visual con nombre extenso"; });
   });
-  summary?.distribuciones.porProfesional.forEach((row, index) => { row.nombre = `Profesional ${index + 1}`; });
+  summary?.distribuciones.porProfesional.forEach((row, index) => { row.nombre = `Funcionario ${index + 1}`; });
   let responsibilities = null;
   let coordinatorAuthorizationSimulated = false;
   if (checkingResponsibilities) {
@@ -64,12 +66,11 @@ try {
       // QA may have no coordinator. Use the actual read-only staff snapshot for
       // layout only; authorization is verified separately by real route tests.
       coordinatorAuthorizationSimulated = true;
-      responsibilities.funcionarios = responsibilities.funcionarios.filter((row) => row.activo && ["PROFESIONAL", "LECTOR"].includes(row.rol));
     }
     responsibilities.funcionarios.forEach((row, index) => { row.nombre = `Funcionario ${index + 1} · identidad reservada`; });
   }
   let activity = null;
-  if (process.argv.includes("--activity") && supervision.getSupervisionActivity) {
+  if ((process.argv.includes("--activity") || coordinator) && supervision.getSupervisionActivity) {
     activity = (await supervision.getSupervisionActivity()).data;
     activity.eventos.forEach((row, index) => {
       row.autorNombre = row.autorNombre ? "Autor de la actuación" : null;
@@ -108,6 +109,12 @@ try {
     if (result.exceptionDetails) throw new Error("BROWSER_EVALUATION_FAILED");
     return result.result.value;
   };
+  captureFailure = async () => {
+    const shot = await send("Page.captureScreenshot", { format: "png" });
+    const filename = path.join(folder, "visual-failure.png");
+    await writeFile(filename, Buffer.from(shot.data, "base64"));
+    return filename;
+  };
   const until = async (expression) => {
     for (let attempt = 0; attempt < 100; attempt++) { if (await evaluate(expression)) return; await pause(100); }
     throw new Error("BROWSER_RENDER_TIMEOUT");
@@ -116,9 +123,12 @@ try {
   await send("Fetch.enable", { patterns: [{ urlPattern: "*", requestStage: "Request" }] });
   await send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
   await send("Page.navigate", { url: application });
+  phase = "MENU";
   await until(`Array.from(document.querySelectorAll('aside button')).some(button => button.title === 'Supervisión SOME')`);
   await evaluate(`Array.from(document.querySelectorAll('aside button')).find(button => button.title === 'Supervisión SOME').click()`);
-  await until(coordinator ? `document.querySelector('[aria-label="Responsabilidades de funcionarios"]') !== null` : `document.querySelector('[aria-label="Indicadores de supervisión"]') !== null`);
+  phase = "SUMMARY";
+  await until(`document.querySelector('[aria-label="Indicadores de supervisión"]') !== null`);
+  if (coordinator && await evaluate(`Array.from(document.querySelectorAll('aside button')).some(button => button.title === 'Gestión de usuarios')`)) throw new Error("COORDINATOR_USER_MANAGEMENT_VISIBLE");
   const capture = async (name, width, height, viewportOnly = false) => {
     await send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false });
     await pause(200);
@@ -130,7 +140,6 @@ try {
     return { filename, ...layout };
   };
   const screenshots = [];
-  if (!coordinator) {
   screenshots.push(await capture("resumen-desktop.png", 1440, 1000));
   screenshots.push(await capture("resumen-mobile.png", 390, 844));
   await send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
@@ -140,14 +149,15 @@ try {
   const rightFile = path.join(folder, "resumen-table-right.png");
   await writeFile(rightFile, Buffer.from(right.data, "base64"));
   screenshots.push({ filename: rightFile });
-  }
   if (responsibilities) {
+    phase = "RESPONSIBILITIES";
     await evaluate(`Array.from(document.querySelectorAll('[role="tab"]')).find(button => button.textContent.includes('Responsabilidades')).click(); window.scrollTo(0,0)`);
     await until(`document.querySelector('[aria-label="Responsabilidades de funcionarios"]') !== null`);
     screenshots.push(await capture("responsabilidades-desktop.png", 1440, 1000));
     screenshots.push(await capture("responsabilidades-mobile.png", 390, 844));
     const hasStaff = await evaluate(`document.querySelector('[aria-label^="Editar reglas de"]') !== null`);
     if (hasStaff) {
+      phase = "RULE_EDITOR";
       await evaluate(`document.querySelector('[aria-label^="Editar reglas de"]').click()`);
       await until(`document.querySelector('dialog[open]') !== null`);
       screenshots.push(await capture("reglas-desktop.png", 1440, 1000, true));
@@ -156,6 +166,7 @@ try {
     }
   }
   if (activity) {
+    phase = "ACTIVITY";
     await evaluate(`Array.from(document.querySelectorAll('[role="tab"]')).find(button => button.textContent.includes('Gestiones y cambios')).click()`);
     await until(`document.querySelector('[aria-label="Actividad de supervisión"]') !== null`);
     screenshots.push(await capture("gestiones-desktop.png", 1440, 1000));
@@ -167,7 +178,8 @@ try {
   await new Promise((resolve, reject) => { browserSocket.onopen = resolve; browserSocket.onerror = reject; });
   browserSocket.send(JSON.stringify({ id: 1, method: "Browser.close" }));
 } catch (error) {
-  console.log(JSON.stringify({ visualCheck: false, error: error instanceof Error && /^[A-Z_0-9]+$/.test(error.message) ? error.message : "VISUAL_CHECK_FAILED" }));
+  const screenshot = await captureFailure?.().catch(() => undefined);
+  console.log(JSON.stringify({ visualCheck: false, phase, screenshot, error: error instanceof Error && /^[A-Z_0-9]+$/.test(error.message) ? error.message : "VISUAL_CHECK_FAILED" }));
   process.exitCode = 1;
 } finally {
   socket?.close(); browserSocket?.close(); browser.kill(); await prisma.$disconnect();

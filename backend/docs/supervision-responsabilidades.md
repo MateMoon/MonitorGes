@@ -44,16 +44,15 @@ ni ejecutar una migración para habilitar la carga a los coordinadores.
 El perfil visible se denomina Coordinador y tiene el mismo alcance operativo que
 ADMIN, excepto Gestión de usuarios. Ambos pueden editar reglas de cuentas no ADMIN,
 incluidas cuentas coordinadoras e inactivas. El rol y actividad del autor y el perfil
-del destinatario se verifican dentro de la transacción. Las reglas personales de
-Coordinador delimitan sus informes por correo, conservando la vista global de
-garantías. Véase [perfiles-acceso.md](perfiles-acceso.md).
+del destinatario se verifican dentro de la transacción. Coordinador recibe un informe de todas las garantías no cumplidas en atención, próximas, críticas o vencidas,
+sin filtrar por sus reglas; estas identifican su cobertura en el Resumen. Véase [perfiles-acceso.md](perfiles-acceso.md).
 
 Las cuentas ADMIN tampoco se muestran ni pueden modificarse desde esta pestaña
 cuando el autor es ADMIN. Su configuración se conserva exclusivamente en Gestión
 de usuarios. La restricción se aplica al listado, a la interfaz y a la escritura
 del backend, incluyendo cambios de perfil del destinatario entre lectura y guardado.
 
-La API heredada `/api/areas-responsabilidad` admite ADMIN y Coordinador como
+La API heredada `/api/areas-responsabilidad` admite ADMIN, Coordinador y Profesional gestor como
 operación de áreas/catálogos. Su modelo no se utiliza para las reglas actuales.
 No se migran, eliminan ni reinterpretan las áreas existentes ni se habilita a
 Coordinador la administración de cuentas mediante esa API.

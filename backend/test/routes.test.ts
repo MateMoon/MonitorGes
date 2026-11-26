@@ -24,6 +24,26 @@ describe("API de lectura", () => {
     mocks.latestImport.mockResolvedValue(null);
   });
   afterAll(async () => { await app.close(); });
+  it.each([
+    ["GET", "/api/supervision/calidad/hallazgos"],
+    ["GET", `/api/supervision/calidad/hallazgos/${"a".repeat(64)}`],
+    ["POST", "/api/supervision/calidad/comparaciones"],
+    ["GET", "/api/supervision/calidad/casos"],
+    ["GET", "/api/supervision/calidad/casos/00000000-0000-4000-8000-000000000001"],
+    ["POST", "/api/supervision/calidad/casos"],
+    ["POST", "/api/supervision/calidad/casos/excel"],
+    ["POST", "/api/supervision/calidad/casos/00000000-0000-4000-8000-000000000001/decisiones"],
+  ] as const)("no expone la ruta retirada %s %s con ningún perfil", async (method, url) => {
+    await app.ready();
+    expect(app.hasRoute({ method, url })).toBe(false);
+    const authenticationCalls = mocks.getSessionUser.mock.calls.length;
+    for (const token of [null, "admin", "coordinator", "professional", "lector"]) {
+      const headers = { origin: "http://localhost:8443", ...(token ? { cookie: `ges_session=${token}` } : {}) };
+      const response = await app.inject({ method, url, headers, ...(method === "POST" ? { payload: {} } : {}) });
+      expect(response.statusCode).toBe(404);
+    }
+    expect(mocks.getSessionUser).toHaveBeenCalledTimes(authenticationCalls);
+  });
   it("valida filtros y paginación", async () => {
     const response = await app.inject({ method: "GET", url: "/api/garantias?estado=desconocido&page=0", headers: { cookie: "ges_session=lector" } });
     expect(response.statusCode).toBe(400);
@@ -119,10 +139,10 @@ describe("API de lectura", () => {
     expect(allowed.headers["access-control-allow-credentials"]).toBe("true");
     expect(denied.headers["access-control-allow-origin"]).toBeUndefined();
   });
-  it.each(["admin", "coordinator"])("permite cambios de estado y reapertura a %s en Fastify", async (actor) => {
+  it.each(["admin", "coordinator", "professional"])("permite cambios de estado y reapertura a %s en Fastify", async (actor) => {
     const id = "00000000-0000-4000-8000-000000000001";
     for (const operation of ["estado-gestion", "reabrir"]) {
-      for (const role of ["professional", "lector", "invalid"]) {
+      for (const role of ["lector", "invalid"]) {
         const response = await app.inject({ method: "POST", url: `/api/garantias/${id}/${operation}`, headers: { cookie: `ges_session=${role}`, origin: "http://localhost:8443" }, payload: {} });
         expect(response.statusCode).toBe(role === "invalid" ? 401 : 403);
       }

@@ -1,5 +1,7 @@
 ﻿import { prisma } from "../../db/prisma.js";
 
+import { readImportRetentionConfig } from "./retention-config.js";
+
 export interface ImportHistoryQuery { page: number; limit: number }
 
 export async function listImports(query: ImportHistoryQuery) {
@@ -23,5 +25,12 @@ export async function listImports(query: ImportHistoryQuery) {
       },
     }),
   ]);
-  return { data: rows, pagination: { page: query.page, limit: query.limit, total, totalPages: Math.ceil(total / query.limit) } };
+  // Do not query tables absent from QA while retention is disabled.
+  if (!readImportRetentionConfig()) return { data: rows, pagination: { page: query.page, limit: query.limit, total, totalPages: Math.ceil(total / query.limit) } };
+  const controls = await prisma.controlRetencionImportacion.findMany({ where: { importacionId: { in: rows.map(row => row.id) } }, select: { importacionId: true, registrosPendientesRevision: true, registrosRepetidosOmitidos: true, registrosInvalidos: true } });
+  const byImport = new Map(controls.map(control => [control.importacionId, control]));
+  return { data: rows.map(row => {
+    const control = byImport.get(row.id);
+    return { ...row, registrosPendientesRevision: control?.registrosPendientesRevision ?? 0, registrosRepetidosOmitidos: control?.registrosRepetidosOmitidos ?? 0, ...(control ? { registrosInvalidos: control.registrosInvalidos } : {}) };
+  }), pagination: { page: query.page, limit: query.limit, total, totalPages: Math.ceil(total / query.limit) } };
 }

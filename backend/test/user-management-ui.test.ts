@@ -220,6 +220,8 @@ describe("Gestión de usuarios: formularios e interacciones", () => {
     expect((screen.getByLabelText(/Puede cargar nóminas/) as HTMLInputElement).checked).toBe(true)
     expect((screen.getByLabelText(/Puede cargar nóminas/) as HTMLInputElement).disabled).toBe(true)
     expect(screen.getByText("Incluido en el perfil de coordinador.")).toBeTruthy()
+    expect((screen.getByLabelText("Recibir informe automático por correo") as HTMLInputElement).checked).toBe(true)
+    expect((screen.getByLabelText("Recibir informe automático por correo") as HTMLInputElement).disabled).toBe(true)
     expect(within(screen.getByLabelText("Perfil de acceso")).getByRole("option", { name: "Coordinador" })).toBeTruthy()
     await user.click(screen.getByLabelText(/Puede cargar nóminas/))
     await user.click(

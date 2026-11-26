@@ -67,6 +67,13 @@ beforeEach(() => {
 })
 
 describe("servicio persistente de usuarios y nombres de garantías", () => {
+  it("muestra recepción incluida para Coordinador sin modificar su preferencia persistida", async () => {
+    mocks.tx.usuario.findMany.mockResolvedValue([{ ...user, rol: "COORDINADOR_SOME", recibirInformeAutomatico: false }])
+    const result = await listUsers()
+    expect(result.data[0].recibirInformeAutomatico).toBe(true)
+    expect(result.resumen.informesHabilitados).toBe(1)
+    expect(mocks.tx.usuario.update).not.toHaveBeenCalled()
+  })
   it("guarda y deduplica las reglas junto con el usuario sin alterar las asignaciones omitidas", async () => {
     mocks.tx.garantia.findMany.mockResolvedValue([])
     const rule = { problemaSalud: "diabetes", establecimiento: "centro norte", tipoGarantia: "tratamiento" }

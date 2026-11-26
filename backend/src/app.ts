@@ -9,6 +9,7 @@ import { authRoutes } from './modules/auth/routes.js';
 import { userRoutes } from './modules/usuarios/routes.js';
 import { responsibilityAreaRoutes } from './modules/areas-responsabilidad/routes.js';
 import { supervisionRoutes } from './modules/supervision/routes.js';
+import { dataQualityRoutes } from './modules/calidad-datos/routes.js';
 
 export function buildApp() {
   const app = Fastify({ logger: true });
@@ -39,6 +40,7 @@ export function buildApp() {
   app.register(importValidationRoutes, { prefix: '/api/importaciones' });
   app.register(dashboardRoutes, { prefix: '/api/dashboard' });
   app.register(supervisionRoutes, { prefix: '/api/supervision' });
+  app.register(dataQualityRoutes, { prefix: '/api/calidad-datos' });
   app.register(notificationRoutes, { prefix: '/api/notificaciones' });
   app.setErrorHandler((error, request, reply) => {
     request.log.error(error);

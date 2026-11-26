@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { hasGlobalAccess } from "../auth/permissions.js";
+import { canSupervise } from "../auth/permissions.js";
 import type { Prisma } from "@prisma/client";
 import { readAssignmentRules, legacyAssignmentRules, type AssignmentRule } from "../garantias/assignment-rules.js";
 import { listAssignmentOptions, saveAssignmentRules, userTransaction, UserManagementError } from "../usuarios/repository.js";
@@ -20,7 +20,7 @@ function staffData(row: StaffRecord) {
 
 async function currentActor(tx: Prisma.TransactionClient, id: string): Promise<Actor> {
   const actor = await tx.usuario.findUnique({ where: { id }, select: { id: true, rol: true, activo: true } });
-  if (!actor?.activo || !hasGlobalAccess(actor.rol)) throw new UserManagementError("FORBIDDEN", "No tienes permiso para administrar responsabilidades.", 403);
+  if (!actor?.activo || !canSupervise(actor.rol)) throw new UserManagementError("FORBIDDEN", "No tienes permiso para administrar responsabilidades.", 403);
   return actor;
 }
 function staffScope(): Prisma.UsuarioWhereInput {
@@ -28,7 +28,7 @@ function staffScope(): Prisma.UsuarioWhereInput {
 }
 function canEdit(actor: Actor, target: StaffRecord) {
   if (target.rol === "ADMIN") return false;
-  return hasGlobalAccess(actor.rol);
+  return canSupervise(actor.rol);
 }
 
 export async function readResponsibilities(actorId: string) {

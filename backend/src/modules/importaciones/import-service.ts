@@ -1,8 +1,8 @@
-import { EstadoImportacion, Prisma } from "@prisma/client";
+import { EstadoImportacion } from "@prisma/client";
 import { prisma } from "../../db/prisma.js";
-import { dateToCivil } from "../../utils/dates.js";
 import { parseWorkbookForImport, type PreviewRow, type ValidationError } from "./validation-service.js";
-import { normalizeIdentityRut as normalizeRut, normalizeIdentityText as normalizeText } from "./identity-normalization.js";
+import { updateImportCounter, writeValidatedRow } from "./row-writer.js";
+import { readImportRetentionConfig } from "./retention-config.js";
 
 export interface ImportFileResult {
   id: string;
@@ -14,90 +14,14 @@ export interface ImportFileResult {
   registrosActualizados: number;
   registrosSinCambios: number;
   registrosConError: number;
+  registrosPendientesRevision: number;
+  registrosRepetidosOmitidos: number;
+  registrosInvalidos: number;
   errores: ValidationError[];
 }
 
-function civilDate(value: string): Date {
-  return new Date(`${value}T00:00:00.000Z`);
-}
-
-function errorRecord(numeroFila: number, codigo: string, mensaje: string) {
-  return { numeroFila, codigo, mensaje };
-}
-
-async function updateImportCounter(tx: Prisma.TransactionClient, id: string, field: "registrosNuevos" | "registrosActualizados" | "registrosSinCambios" | "registrosConError") {
-  return tx.importacion.update({ where: { id }, data: { [field]: { increment: 1 } } });
-}
-
-async function processValidRow(importacionId: string, record: PreviewRow): Promise<"nuevo" | "actualizado" | "sinCambios" | "ambiguo"> {
-  return prisma.$transaction(async (tx) => {
-    const { rutNumero, dv } = normalizeRut(record.rut, record.dv);
-    const problemKey = normalizeText(record.problemaSalud);
-    const guaranteeKey = normalizeText(record.nombreGarantia);
-    const startDate = civilDate(record.fechaInicio);
-    const lockKey = `${rutNumero}-${dv}-${problemKey}-${guaranteeKey}-${record.fechaInicio}`;
-    // PostgreSQL returns `void` for the lock function; cast it so Prisma can deserialize the raw result.
-    await tx.$queryRawUnsafe("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))::text AS locked", lockKey);
-
-    const patient = await tx.paciente.findUnique({ where: { rutNumero_dv: { rutNumero, dv } } });
-    const candidateRows = patient
-      ? await tx.garantia.findMany({
-          where: { pacienteId: patient.id, fechaInicio: startDate },
-          select: { id: true, problemaSalud: true, nombreGarantia: true, fechaLimite: true, responsable: true },
-        })
-      : [];
-    const matches = candidateRows.filter((row) => normalizeText(row.problemaSalud) === problemKey && normalizeText(row.nombreGarantia) === guaranteeKey);
-
-    if (matches.length > 1) {
-      await tx.errorImportacion.create({ data: { importacionId, ...errorRecord(record.numeroFila, "AMBIGUOUS_MATCH", "Más de una garantía coincide con la clave provisional; no se modificó ningún registro.") } });
-      await updateImportCounter(tx, importacionId, "registrosConError");
-      return "ambiguo";
-    }
-
-    let patientId = patient?.id;
-    const patientName = record.nombre.trim();
-    if (!patient) {
-      const createdPatient = await tx.paciente.create({ data: { rutNumero, dv, nombre: patientName } });
-      patientId = createdPatient.id;
-    } else if (patient.nombre !== patientName) {
-      await tx.paciente.update({ where: { id: patient.id }, data: { nombre: patientName } });
-    }
-
-    if (matches.length === 1) {
-      const match = matches[0];
-      const nextLimit = civilDate(record.fechaLimite);
-      const limitChanged = dateToCivil(match.fechaLimite) !== record.fechaLimite;
-      const responsible = record.responsable.trim();
-      const responsibleChanged = match.responsable !== responsible;
-      if (limitChanged || responsibleChanged) {
-        await tx.garantia.update({
-          where: { id: match.id },
-          data: {
-            ...(limitChanged ? { fechaLimite: nextLimit } : {}),
-            ...(responsibleChanged ? { responsable: responsible } : {}),
-            version: { increment: 1 },
-          },
-        });
-        await updateImportCounter(tx, importacionId, "registrosActualizados");
-        return "actualizado";
-      }
-      await updateImportCounter(tx, importacionId, patient && patient.nombre !== patientName ? "registrosActualizados" : "registrosSinCambios");
-      return patient && patient.nombre !== patientName ? "actualizado" : "sinCambios";
-    }
-
-    await tx.garantia.create({
-      data: {
-        pacienteId: patientId!,
-        problemaSalud: record.problemaSalud.trim(),
-        nombreGarantia: record.nombreGarantia.trim(),
-        fechaInicio: startDate,
-        fechaLimite: civilDate(record.fechaLimite),
-        responsable: record.responsable.trim(),
-      },
-    });
-    await updateImportCounter(tx, importacionId, "registrosNuevos");
-    return "nuevo";
-  });
+async function processValidRow(importacionId: string, record: PreviewRow) {
+  return prisma.$transaction(tx => writeValidatedRow(tx, importacionId, record));
 }
 
 async function persistInitialErrors(importacionId: string, errors: ValidationError[]) {
@@ -121,7 +45,11 @@ async function persistRowError(importacionId: string, error: ValidationError) {
   });
 }
 
-export async function importWorkbook(buffer: Buffer, filename: string, usuarioId: string): Promise<ImportFileResult> {
+export async function importWorkbook(buffer: Buffer, filename: string, usuarioId: string, options: { solicitudId?: string } = {}): Promise<ImportFileResult> {
+  if (readImportRetentionConfig()) {
+    const { importWorkbookWithRetention } = await import("./retained-import-service.js");
+    return importWorkbookWithRetention(prisma, buffer, filename, usuarioId, options);
+  }
   const { validation, registrosValidos } = await parseWorkbookForImport(buffer, filename);
   const validationErrorRows = new Set(validation.errores.map((error) => error.numeroFila));
   const initial = await prisma.$transaction(async (tx) => {
@@ -186,6 +114,9 @@ export async function importWorkbook(buffer: Buffer, filename: string, usuarioId
     registrosActualizados,
     registrosSinCambios,
     registrosConError,
+    registrosPendientesRevision: 0,
+    registrosRepetidosOmitidos: 0,
+    registrosInvalidos: validationErrorRows.size,
     errores,
   };
 }

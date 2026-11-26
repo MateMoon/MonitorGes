@@ -18,14 +18,14 @@ describe("API de vista previa y resultados individuales", () => {
   afterEach(() => vi.unstubAllEnvs());
   afterAll(() => app.close());
   const headers = { cookie: "ges_session=authorized" };
-  it.each(["ADMIN", "COORDINADOR_SOME"])("%s obtiene solo conteos en la vista previa", async (rol) => {
+  it.each(["ADMIN", "COORDINADOR_SOME", "PROFESIONAL"])("%s obtiene solo conteos en la vista previa", async (rol) => {
     mocks.getSessionUser.mockResolvedValue({ id: "test-actor", rol });
     const response = await app.inject({ method: "GET", url: "/api/notificaciones/vista-previa-individual?fecha=2026-11-05", headers });
     expect(response.statusCode).toBe(200); expect(response.json().data.correosPrevistos).toBe(1);
     expect(response.body).not.toMatch(/email|rut|nombrePaciente|html|messageId/);
     expect(mocks.preview).toHaveBeenCalledWith("2026-11-05");
   });
-  it.each(["LECTOR", "PROFESIONAL", null])("exige un perfil operativo global para ambas consultas: %s", async (role) => {
+  it.each(["LECTOR", null])("exige un perfil operativo global para ambas consultas: %s", async (role) => {
     mocks.getSessionUser.mockResolvedValue(role ? { id: "test-user", rol: role } : null);
     for (const path of ["vista-previa-individual", "ultimos-resultados-individuales"]) {
       const response = await app.inject({ method: "GET", url: "/api/notificaciones/" + path, headers });

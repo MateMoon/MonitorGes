@@ -102,7 +102,7 @@ describe("Supervisión SOME: datos y estados de la pantalla", () => {
     expect(screen.getByRole("list", { name: "Por establecimiento" }).textContent).toContain("Centro Norte");
     expect(screen.queryByRole("button", { name: /Ver todos los casos/ })).toBeNull();
     expect(screen.getByRole("tab", { name: "Responsabilidades" })).toBeTruthy();
-    expect(screen.queryByText("Calidad de datos")).toBeNull();
+    expect(screen.getAllByRole("tab").map(tab => tab.textContent)).toEqual(["Resumen", "Responsabilidades", "Gestiones y cambios"]);
   });
   it("mantiene el orden recibido y abre el detalle por ID con fila y con botón accesible", async () => {
     render(createElement(SupervisionSome, props));
@@ -218,6 +218,19 @@ describe("Supervisión SOME: menú y navegación real de App", () => {
     await userEvent.setup().click(attempt);
     expect(screen.getByRole("button", { name: "Intentar acceso directo" })).toBeTruthy();
     expect(api.summary).not.toHaveBeenCalled();
+  });
+  it("Profesional gestor tiene dashboard global e importación, sin supervisión ni administración", async () => {
+    api.current.mockResolvedValue({ id: "professional", nombre: "Cuenta de prueba", rol: "PROFESIONAL", puedeCargarNominas: false });
+    render(createElement(App));
+    await screen.findByText("Dashboard global");
+    expect(screen.queryByRole("button", { name: "Supervisión SOME" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Gestión de usuarios" })).toBeNull();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Intentar administración" }));
+    expect(screen.getByText("Dashboard global")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Importar nómina" }));
+    expect(await screen.findByRole("heading", { name: "Importar nómina de garantías" })).toBeTruthy();
+    expect(api.summary).not.toHaveBeenCalled(); expect(api.responsibilities).not.toHaveBeenCalled();
   });
 });
 
@@ -406,7 +419,7 @@ describe("Supervisión SOME: gestiones y cambios", () => {
     expect(within(rows[3]).queryByLabelText("Cambio de estado de gestión")).toBeNull();
     expect(rows[4].textContent).toContain("Autor no disponible");
     expect(rows[4].textContent).toContain("Antecedente previo al historial detallado");
-    expect(screen.getByText(/Las importaciones no cuentan/)).toBeTruthy();
+    expect(screen.getByText(/Las revisiones no son actuaciones ni modifican el estado de gestión/)).toBeTruthy();
   });
   it("permite desplegar el respaldo y comentarios largos, y abre el caso por su ID", async () => {
     render(createElement(SupervisionSome, props)); await openActivity();
@@ -434,7 +447,10 @@ describe("Supervisión SOME: gestiones y cambios", () => {
     expect(document.activeElement).toBe(activityTab);
     expect(screen.getByRole("tabpanel").getAttribute("aria-labelledby")).toBe(activityTab.id);
     fireEvent.keyDown(activityTab, { key: "Home" }); expect(document.activeElement).toBe(summaryTab);
-    fireEvent.keyDown(summaryTab, { key: "End" }); expect(document.activeElement).toBe(activityTab);
+    fireEvent.keyDown(summaryTab, { key: "End" });
+    expect(document.activeElement).toBe(activityTab);
+    fireEvent.keyDown(activityTab, { key: "ArrowRight" }); expect(document.activeElement).toBe(summaryTab);
+    fireEvent.keyDown(summaryTab, { key: "ArrowLeft" }); expect(document.activeElement).toBe(activityTab);
     fireEvent.keyDown(activityTab, { key: "ArrowLeft" }); expect(document.activeElement).toBe(responsibilitiesTab);
     fireEvent.keyDown(responsibilitiesTab, { key: "ArrowLeft" }); expect(document.activeElement).toBe(summaryTab);
     await screen.findByLabelText("Indicadores de supervisión");

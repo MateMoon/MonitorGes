@@ -96,11 +96,11 @@ export function requireRoles(...roles: SafeUser["rol"][]) {
 }
 
 /**
- * ADMIN y COORDINADOR_SOME pueden cargar nóminas por perfil. PROFESIONAL
- * requiere el permiso persistido en Usuario; LECTOR nunca puede importar.
+ * ADMIN, COORDINADOR_SOME y PROFESIONAL pueden cargar nóminas por perfil.
+ * LECTOR nunca puede importar; el permiso heredado no amplía ni reduce el perfil.
  */
 export function canUploadNominations(user: Pick<SafeUser, "rol" | "puedeCargarNominas"> | null): boolean {
-  return Boolean(user && (hasGlobalAccess(user.rol) || (user.rol === "PROFESIONAL" && user.puedeCargarNominas)));
+  return Boolean(user && hasGlobalAccess(user.rol));
 }
 
 export async function requireImportPermission(request: FastifyRequest, reply: FastifyReply) {

@@ -10,7 +10,7 @@ import type { Garantia, EstadoGestion } from '../types'
 import { MANAGEMENT, MANAGEMENT_ORDER, managementPreset } from '../management'
 import { Btn, Card, CardHeader, Days, Empty, StatusBadge, Th, cx, inputCls, tdCls } from '../ui'
 
-export type Page = 'dashboard' | 'garantias' | 'detalle' | 'importar' | 'historial' | 'estadisticas' | 'configuracion' | 'supervision'
+export type Page = 'dashboard' | 'garantias' | 'detalle' | 'importar' | 'historial' | 'estadisticas' | 'configuracion' | 'supervision' | 'calidad'
 export type Nav = (p: Page, o?: { id?: string | number; estados?: Status[]; estadoGestion?: EstadoGestion; soloPendientes?: boolean }) => void
 
 export function Logo({ light, size = 36 }: { light?: boolean; size?: number }) {

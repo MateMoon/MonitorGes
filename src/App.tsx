@@ -2,19 +2,21 @@ import { useEffect, useState } from 'react'
 import { getCurrentUser, logout, type AuthUser } from './services/auth'
 import { registrarGestionGarantia, type ActuacionInput } from './services/garantias'
 import type { EstadoGestion } from './types'
-import { CheckCircle2, ClipboardList, History, LayoutDashboard, ListChecks, LogOut, Settings, Upload, type LucideIcon } from 'lucide-react'
+import { CheckCircle2, ClipboardList, History, LayoutDashboard, ListChecks, LogOut, Settings, ShieldCheck, Upload, type LucideIcon } from 'lucide-react'
 import type { Status } from './data'
 import { Configuracion, Historial, Importar } from './pages/pages2'
 import { Dashboard, Detalle, Garantias, Login, Logo, type Nav, type Page } from './pages/pages1'
 import { cx } from './ui'
 import SupervisionSome from './pages/SupervisionSome'
-import { canUploadNominations, hasGlobalAccess, ROLE_LABELS } from './permissions'
+import { canReviewDataQuality, canUploadNominations, hasGlobalAccess, ROLE_LABELS } from './permissions'
+import CalidadDatos from './pages/CalidadDatos'
 
 const MENU: { id: Page; label: string; icon: LucideIcon; title: string }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, title: 'Dashboard' },
   { id: 'garantias', label: 'Garantías', icon: ListChecks, title: 'Garantías' },
   { id: 'supervision', label: 'Supervisión SOME', icon: ClipboardList, title: 'Supervisión SOME' },
   { id: 'importar', label: 'Importar nómina', icon: Upload, title: 'Importar nómina' },
+  { id: 'calidad', label: 'Calidad de datos', icon: ShieldCheck, title: 'Calidad de datos' },
   { id: 'historial', label: 'Historial de importaciones', icon: History, title: 'Historial de importaciones' },
   // Estadísticas permanece temporalmente deshabilitada.
   // { id: 'estadisticas', label: 'Estadísticas', icon: BarChart3, title: 'Estadísticas' },
@@ -39,6 +41,7 @@ export default function App() {
     // Estadísticas permanece bloqueada mientras está temporalmente deshabilitada.
     if (p === 'estadisticas') return
     if (p === 'supervision' && user?.rol !== 'ADMIN' && user?.rol !== 'COORDINADOR_SOME') return
+    if (p === 'calidad' && (!user || !canReviewDataQuality(user.rol))) return
     if (p === 'configuracion' && user?.rol !== 'ADMIN') return
     setPage(p); setNavKey((k) => k + 1)
     if (o?.id) setSel(o.id)
@@ -71,6 +74,7 @@ export default function App() {
             if (m.id === 'importar') return canUploadNominations(user)
             if (m.id === 'configuracion') return user.rol === 'ADMIN'
             if (m.id === 'supervision') return user.rol === 'ADMIN' || user.rol === 'COORDINADOR_SOME'
+            if (m.id === 'calidad') return canReviewDataQuality(user.rol)
             return true
           }).map((m) => (
             <button key={m.id} onClick={() => nav(m.id)} title={m.label}
@@ -104,6 +108,7 @@ export default function App() {
           {page === 'detalle' && <Detalle id={sel} nav={nav} onGestionar={gestionar} canManage={globalAccess || user.rol === 'PROFESIONAL'} isAdmin={globalAccess} />}
           {page === 'importar' && <Importar nav={nav} toast={toast} />}
           {page === 'historial' && <Historial />}
+          {page === 'calidad' && <CalidadDatos role={user.rol} onSessionExpired={() => setUser(null)} />}
           {page === 'supervision' && <SupervisionSome isAdmin={user.rol === 'ADMIN'} isCoordinator={user.rol === 'COORDINADOR_SOME'} nav={nav} onSessionExpired={() => setUser(null)} />}
           {/* Estadísticas sigue temporalmente deshabilitada.
           {page === 'estadisticas' && <Estadisticas />}

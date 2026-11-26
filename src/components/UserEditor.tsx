@@ -111,7 +111,7 @@ export default function UserEditor({
         form.rol !== "PROFESIONAL"
           ? false
           : form.puedeCargarNominas,
-      recibirInformeAutomatico: form.recibirInformeAutomatico,
+      recibirInformeAutomatico: form.rol === "COORDINADOR_SOME" || form.recibirInformeAutomatico,
       activo: form.activo,
       reglasAsignacion: expandAssignmentGroups(form.gruposAsignacion).rules,
     }
@@ -298,7 +298,9 @@ export default function UserEditor({
             {fieldError("reglasAsignacion")}
           </div>
           <p className="text-xs text-muted">
-            {hasGlobalAccess(form.rol)
+            {form.rol === "COORDINADOR_SOME"
+              ? "Coordinador ve todas las garantías y recibe las no cumplidas en atención, próximas, críticas o vencidas, sin filtro por reglas. Sus reglas solo se utilizan para identificar su cobertura en Supervisión SOME."
+              : hasGlobalAccess(form.rol)
               ? "Este perfil ve todas las garantías. Estas reglas delimitan sus informes por correo."
               : "Cada grupo incluye todas las combinaciones de los problemas, establecimientos y tipos seleccionados. Verá las coincidencias en Dashboard, Garantías e informes por correo. Sin asignaciones no verá garantías."}
           </p>
@@ -309,7 +311,7 @@ export default function UserEditor({
                 type="checkbox"
                 className="mt-0.5"
                 checked={canUploadNominations(form)}
-                disabled={form.rol !== "PROFESIONAL"}
+                disabled
                 onChange={(event) =>
                   change("puedeCargarNominas", event.target.checked)
                 }
@@ -331,13 +333,15 @@ export default function UserEditor({
                     No disponible para lectores.
                   </span>
                 )}
+                {form.rol === "PROFESIONAL" && <span className="block text-xs text-muted">Incluido en el perfil de profesional gestor.</span>}
               </span>
             </label>
             <label className="flex items-start gap-2 text-sm">
               <input
                 type="checkbox"
                 className="mt-0.5"
-                checked={form.recibirInformeAutomatico}
+                checked={form.rol === "COORDINADOR_SOME" || form.recibirInformeAutomatico}
+                disabled={form.rol === "COORDINADOR_SOME"}
                 onChange={(event) =>
                   change("recibirInformeAutomatico", event.target.checked)
                 }
@@ -345,8 +349,7 @@ export default function UserEditor({
               <span>Recibir informe automático por correo</span>
             </label>
             <p className="text-xs text-muted">
-              Recibirá únicamente garantías que coincidan con sus reglas si la cuenta
-              está activa y el envío automático está habilitado. Se utilizará el correo
+              {form.rol === "COORDINADOR_SOME" ? "La recepción está incluida en este perfil: recibirá todas las garantías no cumplidas en atención, próximas, críticas o vencidas, sin filtro por reglas, si la cuenta está activa y el envío automático está habilitado." : "Recibirá únicamente garantías que coincidan con sus reglas, vencidas o con plazo dentro de 30 días, si la cuenta está activa y el envío automático está habilitado."} Se utilizará el correo
               de esta cuenta. Guardar la configuración no envía un correo.
             </p>
             <label className="flex items-center gap-2 text-sm">

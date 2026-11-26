@@ -3,11 +3,12 @@ import { dateToCivil } from "../../utils/dates.js";
 import { normalizeIdentityRut } from "./identity-normalization.js";
 import type { PreviewRow } from "./validation-service.js";
 import type { MatchCandidate } from "./row-matching.js";
+import type { Prisma } from "@prisma/client";
 
 export type ExistingMatchCandidate = MatchCandidate & { fechaLimite: string; responsable: string };
 
 /** Lee únicamente garantías de los RUT de la planilla; no escribe ni devuelve nombres de pacientes. */
-export async function findExistingMatchCandidates(rows: readonly PreviewRow[]): Promise<ExistingMatchCandidate[]> {
+export async function findExistingMatchCandidates(rows: readonly PreviewRow[], db: Pick<Prisma.TransactionClient, "garantia"> = prisma): Promise<ExistingMatchCandidate[]> {
   const patientKeys = new Map<string, { rutNumero: string; dv: string }>();
   for (const row of rows) {
     const normalized = normalizeIdentityRut(row.rut, row.dv);
@@ -15,7 +16,7 @@ export async function findExistingMatchCandidates(rows: readonly PreviewRow[]): 
   }
   if (patientKeys.size === 0) return [];
 
-  const records = await prisma.garantia.findMany({
+  const records = await db.garantia.findMany({
     where: { paciente: { is: { OR: [...patientKeys.values()] } } },
     select: {
       id: true,

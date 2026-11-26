@@ -1,12 +1,12 @@
 import type { FastifyInstance } from "fastify";
 import { requireRoles } from "../auth/routes.js";
-import { OPERATIONAL_ROLES } from "../auth/permissions.js";
+import { SUPERVISION_ROLES } from "../auth/permissions.js";
 import { getSupervisionSummary, getSupervisionActivity } from "./service.js";
 import { supervisionResponsibilityRoutes } from "./responsibility-routes.js";
 
 export async function supervisionRoutes(app: FastifyInstance) {
   await supervisionResponsibilityRoutes(app);
-  app.get("/eventos", { preHandler: requireRoles(...OPERATIONAL_ROLES) }, async (request, reply) => {
+  app.get("/eventos", { preHandler: requireRoles(...SUPERVISION_ROLES) }, async (request, reply) => {
     reply.header("Cache-Control", "no-store");
     try {
       return await getSupervisionActivity();
@@ -15,7 +15,7 @@ export async function supervisionRoutes(app: FastifyInstance) {
       return reply.code(503).send({ error: { code: "SUPERVISION_ACTIVITY_UNAVAILABLE", message: "No fue posible cargar las gestiones y cambios. Intenta nuevamente.", details: [] }, requestId: request.id });
     }
   });
-  app.get("/resumen", { preHandler: requireRoles(...OPERATIONAL_ROLES) }, async (request, reply) => {
+  app.get("/resumen", { preHandler: requireRoles(...SUPERVISION_ROLES) }, async (request, reply) => {
     reply.header("Cache-Control", "no-store");
     try {
       return await getSupervisionSummary();

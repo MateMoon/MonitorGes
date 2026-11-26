@@ -34,6 +34,7 @@ export function Importar({ nav, toast }: { nav: Nav; toast: Toast }) {
   const [requestError, setRequestError] = useState<string | null>(null)
   const input = useRef<HTMLInputElement>(null)
   const importLock = useRef(false)
+  const importRequestId = useRef<string | undefined>(undefined)
   const comparisonGate = useRef(new ComparisonRequestGate())
 
   const pick = (selected?: File | null) => {
@@ -57,6 +58,7 @@ export function Importar({ nav, toast }: { nav: Nav; toast: Toast }) {
     setComparison(null)
     setComparisonError(null)
     setFile(selected)
+    importRequestId.current = crypto.randomUUID()
     setStep('selected')
   }
   const validate = async () => {
@@ -79,7 +81,7 @@ export function Importar({ nav, toast }: { nav: Nav; toast: Toast }) {
     setRequestError(null)
     setStep('importing')
     try {
-      const persisted = await importFile(file)
+      const persisted = await importFile(file, undefined, importRequestId.current)
       setImportResult(persisted)
       setStep('done')
       toast('El resultado de la importación fue guardado.')
@@ -117,6 +119,7 @@ export function Importar({ nav, toast }: { nav: Nav; toast: Toast }) {
     setComparison(null)
     setComparisonError(null)
     setFile(null)
+    importRequestId.current = undefined
     if (input.current) input.current.value = ''
   }
   const stepIdx = { idle: 0, selected: 1, validating: 1, result: 2, importing: 3, done: 3 }[step]
@@ -221,10 +224,13 @@ export function Importar({ nav, toast }: { nav: Nav; toast: Toast }) {
           <div className={cx('mx-auto grid size-16 place-items-center rounded-full', importResult.estado === 'FALLIDA' ? 'bg-[#fbe7e5] text-[#a12a22]' : 'bg-[#e6f4ec] text-[#3c9a67]')}><CheckCircle2 className="size-9" /></div>
           <h3 className="mt-4 text-xl font-semibold">{importResult.estado === 'COMPLETADA' ? 'Importación completada' : importResult.estado === 'COMPLETADA_CON_OBSERVACIONES' ? 'Importación completada con observaciones' : 'Importación fallida'}</h3>
           <p className="mx-auto mt-2 max-w-md text-sm text-muted">{importResult.nombreArchivo} · {importResult.filasLeidas} filas leídas.</p>
+          {(importResult.registrosPendientesRevision ?? 0) > 0 && <div role="status" className="mx-auto mt-5 max-w-xl rounded-lg border border-[#efdc9a] bg-[#fffbec] px-4 py-3 text-left text-sm text-[#6b4f06]"><p>La nómina se procesó. Algunas filas necesitan revisión y no se incorporaron todavía como garantías.</p><p className="mt-1 font-medium">Pendientes de revisión: {importResult.registrosPendientesRevision}</p></div>}
           <ul className="mx-auto mt-5 max-w-sm space-y-2 text-left text-sm">
             <li className="flex justify-between"><span>Registros nuevos</span><strong>{importResult.registrosNuevos}</strong></li>
             <li className="flex justify-between"><span>Registros actualizados</span><strong>{importResult.registrosActualizados}</strong></li>
             <li className="flex justify-between"><span>Sin cambios</span><strong>{importResult.registrosSinCambios}</strong></li>
+            {(importResult.registrosRepetidosOmitidos ?? 0) > 0 && <li className="flex justify-between"><span>Repeticiones equivalentes omitidas</span><strong>{importResult.registrosRepetidosOmitidos}</strong></li>}
+            {(importResult.registrosInvalidos ?? 0) > 0 && <li className="flex justify-between"><span>Filas inválidas</span><strong>{importResult.registrosInvalidos}</strong></li>}
             <li className="flex justify-between"><span>Con errores</span><strong>{importResult.registrosConError}</strong></li>
           </ul>
           {importResult.errores.length > 0 && <div className="mx-auto mt-5 max-w-xl rounded-lg bg-[#fff5ec] px-4 py-3 text-left text-sm text-[#7a3d0d]"><p className="font-medium">Filas omitidas</p><ul className="mt-2 max-h-40 space-y-1 overflow-y-auto">{importResult.errores.map((error, index) => <li key={`${error.numeroFila}-${error.codigo}-${index}`}>Fila {error.numeroFila}{error.campo ? ` · ${error.campo}` : ''}: {error.mensaje}</li>)}</ul></div>}

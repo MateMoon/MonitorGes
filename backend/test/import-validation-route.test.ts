@@ -74,10 +74,10 @@ describe("POST /api/importaciones/validar", () => {
     expect(response.statusCode).toBe(400);
     expect(response.json().error.code).toBe("FILE_REQUIRED");
   });
-  it("requiere permiso persistido antes de validar o importar", async () => {
+  it("exige sesión y deniega al lector aunque falsifique permisos", async () => {
     const anonymous = await app.inject({ method: "POST", url: "/api/importaciones/validar", headers: { origin: "http://localhost:8443" } });
     expect(anonymous.statusCode).toBe(401);
-    authMocks.getSessionUser.mockResolvedValueOnce({ id: "professional", username: "professional", nombre: "Professional", email: "professional@example.test", rol: "PROFESIONAL", puedeCargarNominas: false });
+    authMocks.getSessionUser.mockResolvedValueOnce({ id: "professional", username: "professional", nombre: "Professional", email: "professional@example.test", rol: "LECTOR", puedeCargarNominas: false });
     const forged = await app.inject({ method: "POST", url: "/api/importaciones", headers: { origin: "http://localhost:8443", cookie: "ges_session=professional", "content-type": "application/json" }, payload: { rol: "ADMIN", puedeCargarNominas: true } });
     expect(forged.statusCode).toBe(403);
     expect(db.read).not.toHaveBeenCalled();
@@ -88,13 +88,14 @@ describe("POST /api/importaciones/validar", () => {
     expect(reader.statusCode).toBe(403);
   });
 
-  it.each([true, false])("COORDINADOR_SOME valida y compara por perfil aunque el permiso persistido sea %s", async (puedeCargarNominas) => {
+  it.each(["COORDINADOR_SOME", "PROFESIONAL"])("%s valida y compara sin depender del permiso heredado", async (rol) => {
+    const puedeCargarNominas = false;
     const form = multipart(await sampleXlsx());
-    authMocks.getSessionUser.mockResolvedValueOnce({ id: "coord", username: "coord", nombre: "Coordinador", email: "coord@example.test", rol: "COORDINADOR_SOME", puedeCargarNominas });
+    authMocks.getSessionUser.mockResolvedValueOnce({ id: "coord", username: "coord", nombre: "Coordinador", email: "coord@example.test", rol, puedeCargarNominas });
     const allowed = await app.inject({ method: "POST", url: "/api/importaciones/validar", headers: { "content-type": form.contentType, origin: "http://localhost:8443", cookie: "ges_session=coord" }, payload: form.body });
     expect(allowed.statusCode).toBe(200);
 
-    authMocks.getSessionUser.mockResolvedValueOnce({ id: "coord", username: "coord", nombre: "Coordinador", email: "coord@example.test", rol: "COORDINADOR_SOME", puedeCargarNominas });
+    authMocks.getSessionUser.mockResolvedValueOnce({ id: "coord", username: "coord", nombre: "Coordinador", email: "coord@example.test", rol, puedeCargarNominas });
     const compared = await app.inject({ method: "POST", url: "/api/importaciones/comparar", headers: { "content-type": form.contentType, origin: "http://localhost:8443", cookie: "ges_session=coord" }, payload: form.body });
     expect(compared.statusCode).toBe(200);
     expect(db.write).not.toHaveBeenCalled();

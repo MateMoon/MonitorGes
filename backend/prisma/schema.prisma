@@ -78,6 +78,10 @@ model Garantia {
   estadoGestion           EstadoGestion @default(SIN_GESTION)
   revisionGestion         Int       @default(0)
   eventos                 EventoGarantia[]
+  evidenciasCalidad       EvidenciaCalidad[]
+  candidaturasFila        CandidatoFilaImportacion[]
+  resultadosFila          FilaImportacion[] @relation("ResultadoFilaImportacion")
+  resolucionesFila        ResolucionFilaImportacion[] @relation("ResultadoResolucionFila")
   paciente                Paciente @relation(fields: [pacienteId], references: [id], onDelete: Restrict)
   gestionadaPor           Usuario?  @relation("Gestionadas", fields: [gestionadaPorUsuarioId], references: [id], onDelete: SetNull)
 
@@ -134,6 +138,9 @@ model Usuario {
   tiposGarantia  UsuarioTipoGarantia[]
   reglasAsignacion Json?
   informesIndividuales EnvioInformeIndividual[]
+  casosCalidadCreados CasoCalidad[]
+  eventosCalidad EventoCalidad[]
+  resolucionesFila ResolucionFilaImportacion[]
 }
 
 enum EstadoInformeIndividual {
@@ -306,6 +313,8 @@ model Importacion {
   registrosConError     Int                @default(0)
   usuario               Usuario?           @relation(fields: [usuarioId], references: [id], onDelete: SetNull)
   errores               ErrorImportacion[]
+  filasRevision         FilaImportacion[]
+  controlRetencion      ControlRetencionImportacion?
 
   @@index([fechaImportacion])
 }
@@ -362,4 +371,184 @@ model ConfiguracionNotificaciones {
   emailDestinatario  String?
   emailDestinatarios String[] @default([])
   updatedAt          DateTime @updatedAt
+}
+
+enum EstadoCasoCalidad {
+  PENDIENTE
+  ANTECEDENTES
+  RESUELTO
+}
+
+enum OrigenCasoCalidad {
+  APLICACION
+  EXCEL
+}
+
+enum DecisionCalidad {
+  MISMA_GARANTIA
+  GARANTIAS_DIFERENTES
+  NECESITA_ANTECEDENTES
+  FILA_INCORRECTA
+}
+
+enum TipoEventoCalidad {
+  DETECCION
+  REUTILIZACION
+  SOLICITUD_ANTECEDENTES
+  DECISION
+}
+
+model CasoCalidad {
+  id             String @id @default(uuid()) @db.Uuid
+  origen         OrigenCasoCalidad
+  motivo         String
+  estado         EstadoCasoCalidad @default(PENDIENTE)
+  version        Int @default(1)
+  huella         String @db.VarChar(64)
+  claveAbierta   String? @unique @db.VarChar(64)
+  nombreArchivo  String? @db.VarChar(255)
+  huellaArchivo  String? @db.VarChar(64)
+  numeroFila     Int?
+  diferencias    String[] @default([])
+  creadoPorId    String @db.Uuid
+  detectadoAt    DateTime
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  creadoPor      Usuario @relation(fields: [creadoPorId], references: [id], onDelete: Restrict)
+  evidencias     EvidenciaCalidad[]
+  eventos        EventoCalidad[]
+
+  @@index([estado, createdAt, id])
+  @@index([origen, motivo])
+}
+
+model EvidenciaCalidad {
+  id                  String @id @default(uuid()) @db.Uuid
+  casoId              String @db.Uuid
+  posicion            Int
+  tipo                String
+  garantiaId          String? @db.Uuid
+  datos               Json
+  huella              String @db.VarChar(64)
+  versionGarantia     Int?
+  revisionGestion     Int?
+  createdAt           DateTime @default(now())
+  caso                CasoCalidad @relation(fields: [casoId], references: [id], onDelete: Restrict)
+  garantia            Garantia? @relation(fields: [garantiaId], references: [id], onDelete: Restrict)
+
+  @@unique([casoId, posicion])
+  @@index([garantiaId])
+}
+
+model EventoCalidad {
+  id              String @id @default(uuid()) @db.Uuid
+  secuencia       Int @unique @default(autoincrement())
+  casoId          String @db.Uuid
+  usuarioId       String @db.Uuid
+  autorNombre     String
+  tipo            TipoEventoCalidad
+  decision        DecisionCalidad?
+  estadoAnterior  EstadoCasoCalidad?
+  estadoNuevo     EstadoCasoCalidad
+  justificacion   String?
+  antecedentes    String?
+  observacion     String?
+  solicitudId     String @unique @db.Uuid
+  huellaSolicitud String @db.VarChar(64)
+  createdAt       DateTime @default(now())
+  caso            CasoCalidad @relation(fields: [casoId], references: [id], onDelete: Restrict)
+  usuario         Usuario @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+
+  @@index([casoId, createdAt, secuencia])
+}
+
+// Nuevo flujo de importación. Los modelos documentales anteriores siguen intactos.
+enum EstadoFilaImportacion {
+  PENDIENTE
+  RESUELTA
+}
+
+enum DecisionFilaImportacion {
+  MISMA
+  DISTINTA
+}
+
+// Separate table keeps the disabled importer compatible with the previous DB.
+// resultados contains only row numbers and outcomes, never source clinical data.
+model ControlRetencionImportacion {
+  importacionId              String     @id @db.Uuid
+  solicitudId                String     @unique @db.Uuid
+  huellaArchivo              String     @db.VarChar(64)
+  versionPolitica            String     @db.VarChar(64)
+  registrosPendientesRevision Int        @default(0)
+  registrosRepetidosOmitidos  Int        @default(0)
+  registrosInvalidos         Int        @default(0)
+  resultados                Json       @default("{}")
+  completada                Boolean    @default(false)
+  createdAt                 DateTime   @default(now())
+  updatedAt                 DateTime   @updatedAt
+  importacion               Importacion @relation(fields: [importacionId], references: [id], onDelete: Restrict)
+}
+
+model FilaImportacion {
+  id                  String @id @default(uuid()) @db.Uuid
+  importacionId       String @db.Uuid
+  hoja                String @db.VarChar(255)
+  numeroFila          Int
+  datosValidados      Json
+  motivos             String[]
+  versionPolitica     String @db.VarChar(64)
+  estado              EstadoFilaImportacion @default(PENDIENTE)
+  version             Int @default(1)
+  huellaFila          String @db.VarChar(64)
+  huellaDatos         String @db.VarChar(64)
+  huellaCandidatos    String @db.VarChar(64)
+  garantiaResultadoId String? @db.Uuid
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  importacion         Importacion @relation(fields: [importacionId], references: [id], onDelete: Restrict)
+  garantiaResultado   Garantia? @relation("ResultadoFilaImportacion", fields: [garantiaResultadoId], references: [id], onDelete: Restrict)
+  candidatos          CandidatoFilaImportacion[]
+  resolucion          ResolucionFilaImportacion?
+
+  @@unique([importacionId, hoja, numeroFila], map: "FilaImportacion_origen_key")
+  @@unique([id, garantiaResultadoId], map: "FilaImportacion_resultado_key")
+  @@index([estado, createdAt, id])
+  @@index([garantiaResultadoId])
+}
+
+model CandidatoFilaImportacion {
+  filaId           String @db.Uuid
+  garantiaId       String @db.Uuid
+  datos            Json
+  huella           String @db.VarChar(64)
+  versionGarantia  Int
+  revisionGestion Int
+  createdAt        DateTime @default(now())
+  fila             FilaImportacion @relation(fields: [filaId], references: [id], onDelete: Restrict)
+  garantia         Garantia @relation(fields: [garantiaId], references: [id], onDelete: Restrict)
+
+  @@id([filaId, garantiaId])
+  @@index([garantiaId])
+}
+
+model ResolucionFilaImportacion {
+  id                  String @id @default(uuid()) @db.Uuid
+  filaId              String @unique @db.Uuid
+  decision            DecisionFilaImportacion
+  usuarioId           String @db.Uuid
+  autorNombre         String
+  justificacion       String
+  solicitudId         String @unique @db.Uuid
+  huellaSolicitud     String @db.VarChar(64)
+  antecedentesRevisados Json?
+  garantiaResultadoId String @db.Uuid
+  createdAt           DateTime @default(now())
+  fila                FilaImportacion @relation(fields: [filaId, garantiaResultadoId], references: [id, garantiaResultadoId], onDelete: Restrict, onUpdate: Restrict)
+  usuario             Usuario @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+  garantiaResultado   Garantia @relation("ResultadoResolucionFila", fields: [garantiaResultadoId], references: [id], onDelete: Restrict)
+
+  @@unique([filaId, garantiaResultadoId], map: "ResolucionFilaImportacion_resultado_key")
+  @@index([createdAt, id])
+  @@index([garantiaResultadoId])
 }

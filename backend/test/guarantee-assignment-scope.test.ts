@@ -132,7 +132,7 @@ describe("Dashboard y Garantías según asignaciones de usuario", () => {
   });
   afterAll(async () => { await app.close(); });
 
-  it.each(["reader", "professional"])("%s solo ve sus tipos, aunque no reciba correo ni pueda importar", async (user) => {
+  it.each(["reader"])("%s solo ve sus tipos, aunque no reciba correo ni pueda importar", async (user) => {
     const list = await get("/api/garantias", user);
     const dashboard = await get("/api/dashboard", user);
     expect(list.statusCode).toBe(200);
@@ -148,7 +148,7 @@ describe("Dashboard y Garantías según asignaciones de usuario", () => {
     expect((await get(`/api/garantias/${id(1)}`, user)).statusCode).toBe(200);
   });
 
-  it.each(["admin", "coordinator"])("%s ve todo, incluso sin tipos asignados", async (role) => {
+  it.each(["admin", "coordinator", "professional"])("%s ve todo, incluso sin tipos asignados", async (role) => {
     memory.assignments.set(role, []);
     memory.users.get(role).reglasAsignacion = [];
     expect((await get("/api/garantias", role)).json().pagination.total).toBe(6);
@@ -225,17 +225,17 @@ describe("Dashboard y Garantías según asignaciones de usuario", () => {
     expect(names).not.toContain("Otro tipo");
   });
 
-  it("impide consultar y gestionar por ID una garantía ajena sin escribir eventos", async () => {
-    expect((await get(`/api/garantias/${id(4)}`, "professional")).statusCode).toBe(404);
-    expect((await manage(4)).statusCode).toBe(404);
+  it("lector no consulta ni gestiona garantías ajenas; profesional conserva acceso global", async () => {
+    expect((await get(`/api/garantias/${id(4)}`, "reader")).statusCode).toBe(404);
+    expect((await manage(4, "reader")).statusCode).toBe(403);
     expect(memory.events).toEqual([]);
     expect(prisma.$executeRaw).not.toHaveBeenCalled();
     expect(memory.rows.find((row) => row.id === id(4)).revisionGestion).toBe(0);
     expect((await manage(1)).statusCode).toBe(200);
     expect(memory.events).toHaveLength(1);
     memory.assignments.set("professional", []);
-    expect((await manage(6)).statusCode).toBe(404);
-    expect(memory.events).toHaveLength(1);
+    expect((await manage(6)).statusCode).toBe(200);
+    expect(memory.events).toHaveLength(2);
     expect((await manage(4, "admin")).statusCode).toBe(200);
   });
 
@@ -256,8 +256,9 @@ describe("Dashboard y Garantías según asignaciones de usuario", () => {
     expect(list.data.map((row: any) => row.id).sort()).toEqual([id(1), id(2), id(3), id(4), id(6)]);
     expect((await get("/api/dashboard")).json().data).toMatchObject({ total: 5, totalPendientes: 4 });
     expect((await get(`/api/garantias/${id(7)}`)).statusCode).toBe(404);
-    expect((await manage(7)).statusCode).toBe(404);
-    expect((await manage(8)).statusCode).toBe(404);
+    expect((await get(`/api/garantias/${id(8)}`)).statusCode).toBe(404);
+    expect((await manage(7, "reader")).statusCode).toBe(403);
+    expect((await manage(8, "reader")).statusCode).toBe(403);
     expect(memory.events).toHaveLength(0);
     expect((await manage(4)).statusCode).toBe(200);
   });

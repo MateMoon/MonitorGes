@@ -87,7 +87,7 @@ export default function SupervisionResponsibilities({ nav, onSessionExpired, onR
       </Card>
       <Card className="min-w-0"><CardHeader title="Alcance de las responsabilidades" right={<ShieldCheck className="size-5 shrink-0 text-muted" />} /><div className="space-y-4 p-5 text-sm text-muted">
         <p>Combina problema de salud, establecimiento y tipo de garantía. Cada grupo reúne todas las combinaciones seleccionadas; varios grupos amplían las coincidencias.</p>
-        <p>En profesionales y lectores, las reglas delimitan las garantías visibles y el contenido de los informes individuales. Administradores y coordinadores conservan la vista global; sus reglas delimitan únicamente los informes individuales por correo. Las cuentas administradoras se configuran exclusivamente desde Gestión de usuarios.</p>
+        <p>Los lectores ven únicamente las garantías que coinciden con sus reglas. Administradores y profesionales gestores conservan la vista global y reciben informes según sus reglas. Los coordinadores tienen vista global y reciben todas las garantías no cumplidas en atención, próximas, críticas o vencidas, independientemente de sus reglas. Para todos los perfiles, las reglas identifican su cobertura en el Resumen. Las cuentas administradoras se configuran exclusivamente desde Gestión de usuarios.</p>
         <p>Los cambios solo se aplican al pulsar Guardar reglas. Esta pestaña permite administrar coberturas, sin cambiar datos de acceso ni asignar garantías individuales.</p>
       </div></Card>
     </div>

@@ -28,6 +28,9 @@ export interface ImportResult {
   registrosActualizados: number;
   registrosSinCambios: number;
   registrosConError: number;
+  registrosPendientesRevision?: number;
+  registrosRepetidosOmitidos?: number;
+  registrosInvalidos?: number;
   errores: ImportValidationError[];
 }
 
@@ -57,10 +60,10 @@ export async function validateImportFile(file: File, signal?: AbortSignal): Prom
   return result.data;
 }
 
-export async function importFile(file: File, signal?: AbortSignal): Promise<ImportResult> {
+export async function importFile(file: File, signal?: AbortSignal, solicitudId?: string): Promise<ImportResult> {
   const body = new FormData();
   body.append('archivo', file, file.name);
-  const result = await apiRequest<{ data: ImportResult }>('/api/importaciones', { method: 'POST', body, signal });
+  const result = await apiRequest<{ data: ImportResult }>('/api/importaciones', { method: 'POST', body, signal, ...(solicitudId ? { headers: { 'X-Import-Request-Id': solicitudId } } : {}) });
   return result.data;
 }
 

@@ -38,6 +38,7 @@ type UserRecord = Prisma.UsuarioGetPayload<{ select: typeof safeSelect }>
 function publicUser(row: UserRecord) {
   return {
     ...row,
+    recibirInformeAutomatico: row.rol === "COORDINADOR_SOME" || row.recibirInformeAutomatico,
     reglasAsignacion: readAssignmentRules(row.reglasAsignacion) ?? legacyAssignmentRules(row.tiposGarantia.map(({ tipoGarantia }) => tipoGarantia.claveNormalizada)),
     tiposGarantia: row.tiposGarantia
       .map(({ tipoGarantia }) => tipoGarantia)

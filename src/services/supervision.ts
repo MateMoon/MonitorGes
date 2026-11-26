@@ -94,16 +94,23 @@ export async function getSupervisionSummary(signal?: AbortSignal): Promise<Super
   return result.data
 }
 
-export interface SupervisionActivityEvent extends EventoGarantia {
-  garantia: {
+interface ActivityGuarantee {
     id: string
     paciente: { nombre: string }
     problemaSalud: string
     nombreGarantia: string
     establecimiento: string
     estadoGestion: EstadoGestion
+}
+export interface SupervisionManagementEvent extends EventoGarantia { garantia: ActivityGuarantee }
+export interface SupervisionImportReviewEvent extends Omit<EventoGarantia, "tipo" | "secuencia" | "tipoActuacion" | "comentario" | "estadoAnterior" | "estadoNuevo" | "respaldo"> {
+  tipo: "REVISION_IMPORTACION"; secuencia: null; tipoActuacion: null; comentario: null; estadoAnterior: null; estadoNuevo: null; respaldo: null
+  garantia: ActivityGuarantee
+  revisionImportacion: { id: string; decision: "MISMA" | "DISTINTA"; actualizarDatos?: true; descripcion: string; justificacion: string; garantiaResultadoId: string
+    origen: { importacionId: string; archivo: string | null; hoja: string | null; numeroFila: number | null }
   }
 }
+export type SupervisionActivityEvent = SupervisionManagementEvent | SupervisionImportReviewEvent
 
 export interface SupervisionActivity {
   generadoAt: string
@@ -116,10 +123,21 @@ export interface SupervisionActivity {
 function validActivity(value: unknown): value is SupervisionActivity {
   if (!object(value) || value.alcance !== "GLOBAL" || value.zonaHoraria !== "America/Santiago" || value.limite !== 30 || typeof value.generadoAt !== "string" || Number.isNaN(Date.parse(value.generadoAt))) return false
   const states = ["SIN_GESTION", "EN_GESTION", "PENDIENTE_RESOLUCION", "CUMPLIDA"]
-  const kinds = ["ACTUACION", "CAMBIO_ESTADO", "CUMPLIMIENTO", "REAPERTURA", "ANTECEDENTE_LEGADO"]
+  const kinds = ["ACTUACION", "CAMBIO_ESTADO", "CUMPLIMIENTO", "REAPERTURA", "ANTECEDENTE_LEGADO", "REVISION_IMPORTACION"]
   const actions = ["CONTACTO_PACIENTE", "CITACION", "ATENCION_REALIZADA", "DERIVACION", "SOLICITUD_RESPALDO", "OTRA_GESTION"]
   return Array.isArray(value.eventos) && value.eventos.length <= 30 && value.eventos.every((event) => {
-    if (!object(event) || typeof event.id !== "string" || !count(event.secuencia) || typeof event.tipo !== "string" || !kinds.includes(event.tipo) || typeof event.createdAt !== "string" || Number.isNaN(Date.parse(event.createdAt))) return false
+    if (!object(event) || typeof event.id !== "string" || typeof event.tipo !== "string" || !kinds.includes(event.tipo) || typeof event.createdAt !== "string" || Number.isNaN(Date.parse(event.createdAt))) return false
+    if (event.tipo === "REVISION_IMPORTACION") {
+      const review = event.revisionImportacion
+      if (typeof event.autorNombre !== "string" || typeof event.usuarioId !== "string") return false
+      if (event.secuencia !== null || ["tipoActuacion", "comentario", "estadoAnterior", "estadoNuevo", "respaldo"].some(key => event[key] !== null)) return false
+      if (!object(review) || typeof review.id !== "string" || event.id !== `revision-importacion:${review.id}` || !["MISMA", "DISTINTA"].includes(review.decision as string)
+        || ["descripcion", "justificacion", "garantiaResultadoId"].some(key => typeof review[key] !== "string") || !object(review.origen)) return false
+      if (review.actualizarDatos !== undefined && (review.actualizarDatos !== true || review.decision !== "MISMA")) return false
+      const origin = review.origen
+      if (typeof origin.importacionId !== "string" || ["archivo", "hoja"].some(key => origin[key] !== null && typeof origin[key] !== "string") || (origin.numeroFila !== null && (!count(origin.numeroFila) || origin.numeroFila === 0))) return false
+      if (!object(event.garantia) || event.garantia.id !== review.garantiaResultadoId) return false
+    } else if (!count(event.secuencia)) return false
     if (event.tipoActuacion !== null && (typeof event.tipoActuacion !== "string" || !actions.includes(event.tipoActuacion))) return false
     if (["autorNombre", "usuarioId", "comentario", "respaldo"].some((key) => event[key] !== null && typeof event[key] !== "string")) return false
     if (["estadoAnterior", "estadoNuevo"].some((key) => { const state = event[key]; return state !== null && (typeof state !== "string" || !states.includes(state)) })) return false

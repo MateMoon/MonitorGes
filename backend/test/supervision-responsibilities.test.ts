@@ -35,6 +35,7 @@ import { updateManagedUser } from "../src/modules/usuarios/repository.js";
 import { updateSchema } from "../src/modules/usuarios/schema.js";
 import { canAccessGuarantee, userAssignmentRules } from "../src/modules/garantias/assignment-scope.js";
 import { matchesAssignmentRules } from "../src/modules/garantias/assignment-rules.js";
+import { readResponsibilities, writeResponsibilities } from "../src/modules/supervision/responsibility-repository.js";
 
 const id = (value: number) => `00000000-0000-4000-8000-${String(value).padStart(12, "0")}`;
 const rule = { problemaSalud: "diabetes", establecimiento: "centro norte", tipoGarantia: "tratamiento" };
@@ -54,6 +55,11 @@ beforeEach(() => {
 afterAll(() => app.close());
 
 describe("Responsabilidades: autorización real y persistencia compartida", () => {
+  it("el repositorio deniega directamente la lectura y escritura al profesional aunque tenga vista global", async () => {
+    await expect(readResponsibilities(id(3))).rejects.toMatchObject({ code: "FORBIDDEN", statusCode: 403 });
+    await expect(writeResponsibilities(id(3), id(4), "a".repeat(64), [])).rejects.toMatchObject({ code: "FORBIDDEN", statusCode: 403 });
+    expect(prisma.usuario.update).not.toHaveBeenCalled();
+  });
   it.each(["", "invalid", "professional", "reader"])("deniega lectura y escritura con sesión %s antes de consultar el repositorio", async (token) => {
     expect((await request("GET", undefined, token)).statusCode).toBe(token === "" || token === "invalid" ? 401 : 403);
     expect((await request("PUT", `/api/supervision/responsabilidades/${id(3)}`, token, { reglasAsignacion: [] })).statusCode).toBe(token === "" || token === "invalid" ? 401 : 403);
@@ -108,16 +114,18 @@ describe("Responsabilidades: autorización real y persistencia compartida", () =
     expect(await userAssignmentRules(id(3))).toEqual([]);
     expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), { isolationLevel: "Serializable" });
   });
-  it("los cambios alcanzan inmediatamente el filtro común de acceso y correo sin asignaciones individuales", async () => {
+  it("las reglas del profesional filtran su informe y mantienen la vista global", async () => {
     await put([{ problemaSalud: "diabetes", establecimiento: "centro sur", tipoGarantia: "" }]);
     const allowed = { problemaSalud: "Diabetes", responsable: "Centro Sur", nombreGarantia: "Consulta" };
     const denied = { ...allowed, responsable: "Centro Norte" };
     const viewer = { id: id(3), rol: "PROFESIONAL" };
     expect(await canAccessGuarantee(viewer, allowed)).toBe(true);
-    expect(await canAccessGuarantee(viewer, denied)).toBe(false);
+    expect(await canAccessGuarantee(viewer, denied)).toBe(true);
+    expect(matchesAssignmentRules(denied, await userAssignmentRules(id(3)))).toBe(false);
     expect(matchesAssignmentRules(allowed, await userAssignmentRules(id(3)))).toBe(true);
     await put([]);
-    expect(await canAccessGuarantee(viewer, allowed)).toBe(false);
+    expect(await canAccessGuarantee(viewer, allowed)).toBe(true);
+    expect(matchesAssignmentRules(allowed, await userAssignmentRules(id(3)))).toBe(false);
   });
   it("COORDINADOR también administra reglas de LECTOR activo sin modificar sus permisos de gestión", async () => {
     const response = await put([], {}, id(4));

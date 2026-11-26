@@ -10,6 +10,7 @@ import type { Nav } from "./pages1"
 type State = { status: "loading" } | { status: "ready"; data: SupervisionActivity } | { status: "error"; message: string; code?: string }
 const labels: Record<SupervisionActivityEvent["tipo"], string> = {
   ACTUACION: "Actuación registrada", CAMBIO_ESTADO: "Cambio de estado", CUMPLIMIENTO: "Cumplimiento acreditado", REAPERTURA: "Garantía reabierta", ANTECEDENTE_LEGADO: "Antecedente legado",
+  REVISION_IMPORTACION: "Revisión de importación",
 }
 const timestamp = (value: string) => new Intl.DateTimeFormat("es-CL", { dateStyle: "short", timeStyle: "medium", timeZone: "America/Santiago" }).format(new Date(value))
 function StateBadge({ value }: { value: EstadoGestion }) {
@@ -41,7 +42,7 @@ export default function SupervisionActivityPanel({ isAdmin, nav, onSessionExpire
   const data = state.data
   return <section aria-label="Actividad de supervisión" className="space-y-4">
     <div className="flex flex-wrap items-start justify-between gap-3">
-      <div><h3 className="text-lg font-semibold">Gestiones y cambios</h3><p className="mt-1 text-sm text-muted">Últimos 30 eventos registrados · más recientes primero</p><p className="mt-2 inline-flex items-center gap-1.5 text-xs text-muted"><Clock className="size-3.5 shrink-0" />Actualizado: {timestamp(data.generadoAt)} · hora de Santiago</p></div>
+      <div><h3 className="text-lg font-semibold">Gestiones y cambios</h3><p className="mt-1 text-sm text-muted">Últimos 30 eventos registrados · más recientes primero</p><p className="mt-2 inline-flex items-center gap-1.5 text-xs text-muted"><Clock className="size-3.5 shrink-0" />Actualizado: {timestamp(data.generadoAt)}</p></div>
       <Btn onClick={() => setAttempt((current) => current + 1)}><RefreshCw className="size-4" />Actualizar historial</Btn>
     </div>
     <Card className="min-w-0 overflow-hidden">
@@ -49,18 +50,26 @@ export default function SupervisionActivityPanel({ isAdmin, nav, onSessionExpire
       {data.eventos.length ? <ol aria-label="Eventos de gestión" className="divide-y divide-line">{data.eventos.map((event) => <li key={event.id} className="space-y-3 p-4 [overflow-wrap:anywhere] sm:p-5">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div className="min-w-0"><h4 className="font-semibold">{labels[event.tipo]}</h4><p className="mt-1 text-sm text-muted">{event.autorNombre || "Autor no disponible"}</p></div>
-          <time dateTime={event.createdAt} className="text-xs text-muted">{timestamp(event.createdAt)} · Santiago</time>
+          <time dateTime={event.createdAt} className="text-xs text-muted">{timestamp(event.createdAt)}</time>
         </div>
+        {event.tipo === "REVISION_IMPORTACION" && <div className="space-y-2">
+          <span className="inline-flex rounded-full bg-brand-soft px-2.5 py-1 text-xs font-medium text-brand">{event.revisionImportacion.actualizarDatos ? "Datos actualizados · Gestión conservada" : event.revisionImportacion.decision === "MISMA" ? "MISMA · Garantía conservada" : "DISTINTA · Nueva garantía"}</span>
+          <p className="text-sm">{event.revisionImportacion.descripcion}.</p>
+          <p className="text-xs text-muted">{[event.revisionImportacion.origen.archivo, event.revisionImportacion.origen.hoja, event.revisionImportacion.origen.numeroFila ? `Fila ${event.revisionImportacion.origen.numeroFila}` : null].filter(Boolean).join(" · ") || "Origen no disponible"}</p>
+        </div>}
         {event.tipoActuacion && <p className="text-sm font-medium text-brand">{ACTIONS[event.tipoActuacion]}</p>}
         {event.estadoAnterior && event.estadoNuevo && event.estadoAnterior !== event.estadoNuevo && <div aria-label="Cambio de estado de gestión" className="flex flex-wrap items-center gap-2"><StateBadge value={event.estadoAnterior} /><ArrowRight aria-label="a" className="size-4 shrink-0 text-muted" /><StateBadge value={event.estadoNuevo} /></div>}
         <button type="button" onClick={() => nav("detalle", { id: event.garantia.id })} aria-label={`Abrir garantía de ${event.garantia.paciente.nombre}`} className="flex w-full min-w-0 items-start justify-between gap-3 rounded-lg border border-line bg-canvas px-3 py-2.5 text-left hover:border-brand/40 focus-visible:outline-2 focus-visible:outline-brand">
           <span className="min-w-0"><span className="block text-sm font-semibold text-brand">{event.garantia.paciente.nombre}</span><span className="mt-1 block text-sm">{event.garantia.problemaSalud} · {event.garantia.nombreGarantia}</span><span className="mt-1 block text-xs text-muted">{event.garantia.establecimiento || "Establecimiento sin información"}</span></span><ArrowUpRight aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-brand" />
         </button>
+        {event.tipo === "REVISION_IMPORTACION" && (event.revisionImportacion.justificacion.length > 280
+          ? <details className="text-sm"><summary className="cursor-pointer font-medium text-brand">Ver justificación</summary><p className="mt-2 whitespace-pre-wrap">{event.revisionImportacion.justificacion}</p></details>
+          : <p className="whitespace-pre-wrap text-sm"><strong>Justificación: </strong>{event.revisionImportacion.justificacion}</p>)}
         {event.tipo === "ANTECEDENTE_LEGADO" && <p className="text-xs text-muted">Antecedente previo al historial detallado. Se muestra únicamente la información registrada; el autor puede no estar disponible.</p>}
         {event.comentario && (event.comentario.length > 280 ? <details className="text-sm"><summary className="cursor-pointer font-medium text-brand">{event.tipo === "REAPERTURA" ? "Ver motivo de reapertura" : "Ver comentario"}</summary><p className="mt-2 whitespace-pre-wrap">{event.comentario}</p></details> : <p className="whitespace-pre-wrap text-sm">{event.tipo === "REAPERTURA" && <strong>Motivo de reapertura: </strong>}{event.comentario}</p>)}
         {event.respaldo && <details className="text-sm"><summary className="cursor-pointer font-medium text-brand">Ver respaldo de cumplimiento</summary><p className="mt-2 whitespace-pre-wrap">{event.respaldo}</p></details>}
-      </li>)}</ol> : <Empty title="Sin gestiones ni cambios registrados" text="Los eventos aparecerán aquí cuando se registren actuaciones o cambios de gestión en las garantías." />}
+      </li>)}</ol> : <Empty title="Sin gestiones ni cambios registrados" text="Los eventos aparecerán aquí cuando se registren actuaciones, cambios de gestión o revisiones de importación." />}
     </Card>
-    <p className="text-xs text-muted">Este historial contiene los eventos de gestión guardados. Las importaciones no cuentan con un historial detallado de cambios. Los datos del paciente y la garantía corresponden a su información actual.</p>
+    <p className="text-xs text-muted">Este historial reúne gestiones y revisiones de importación registradas. Las revisiones no son actuaciones ni modifican el estado de gestión. Los datos del paciente y la garantía corresponden a su información actual.</p>
   </section>
 }

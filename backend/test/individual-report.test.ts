@@ -125,6 +125,64 @@ describe("envío manual explícito de una sola cuenta", () => {
 });
 
 describe("aislamiento del contenido individual", () => {
+  it("Coordinador incluye cualquier asignación pero solo atención, próxima, crítica y vencida, incluso en límites", async () => {
+    users = new Map([["a", user("a", [], { rol: "COORDINADOR_SOME", reglasAsignacion: [], recibirInformeAutomatico: false })]]);
+    rows = [
+      row("111", "Tipo vencida", "2026-11-04"),
+      row("222", "Tipo crítica cero", "2026-11-05"),
+      row("333", "Tipo crítica siete", "2026-11-12"),
+      row("444", "Tipo próxima ocho", "2026-11-13"),
+      row("555", "Tipo próxima quince", "2026-11-20"),
+      row("666", "Tipo atención dieciséis", "2026-11-21"),
+      row("777", "Tipo atención treinta", "2026-12-05"),
+      row("888", "Tipo normal treinta y uno", "2026-12-06"),
+    ].map((entry,index) => ({...entry, problemaSalud: `Problema ${index}`, responsable: `Centro ${index}` }));
+    const send = vi.fn().mockResolvedValue({});
+    expect(await run({ send })).toMatchObject({ aceptadosSmtp: 1 });
+    expect(records.get(`a:${date}`)?.outcome?.cantidadGarantias).toBe(7);
+    const message = send.mock.calls[0][0];
+    expect(message.subject).toContain("Informe completo");
+    for (const body of [message.text, message.html]) {
+      for (const id of ["111", "222", "333", "444", "555", "666", "777"]) expect(body).toContain(`Paciente ${id}`);
+      expect(body).not.toContain("Paciente 888");
+      expect(body).toContain("Garantías vencidas o dentro de los próximos 30 días: 7");
+    }
+  });
+  it("Coordinador no recibe correo si solo hay garantías de plazo normal", async () => {
+    users = new Map([["a", user("a", [], { rol: "COORDINADOR_SOME", reglasAsignacion: [] })]]);
+    rows = [row("888", "Consulta", "2026-12-06")];
+    const send = vi.fn();
+    expect(await run({ send })).toMatchObject({ aceptadosSmtp: 0, omitidos: 1 });
+    expect(send).not.toHaveBeenCalled();
+    expect(records.get(`a:${date}`)?.outcome?.codigoResultado).toBe("SIN_GARANTIAS_ELEGIBLES");
+  });
+  it.each(["ADMIN", "PROFESIONAL", "LECTOR"] as const)("%s mantiene filtro de reglas y plazo aunque tenga acceso operativo global", async (rol) => {
+    users = new Map([["a", user("a", ["consulta"], { rol })]]);
+    rows = [row("111", "Consulta"), row("222", "Tratamiento"), row("333", "Consulta", "2027-01-05")];
+    const send = vi.fn().mockResolvedValue({}); await run({ send });
+    for (const body of [send.mock.calls[0][0].text, send.mock.calls[0][0].html]) {
+      expect(body).toContain("Paciente 111"); expect(body).not.toContain("Paciente 222"); expect(body).not.toContain("Paciente 333");
+    }
+  });
+  it.each([{ activo: false }, { email: "invalid" }])("Coordinador conserva validación de cuenta y correo: %j", async (patch) => {
+    users = new Map([["a", user("a", [], { rol: "COORDINADOR_SOME", ...patch })]]);
+    const send = vi.fn(); expect(await run({ send })).toMatchObject({ omitidos: 1 }); expect(send).not.toHaveBeenCalled();
+  });
+  it("cambiar entre informe completo y filtrado invalida la reserva antes de leer pacientes", async () => {
+    const current = user("a", ["consulta"], { rol: "COORDINADOR_SOME" });
+    expect(configurationFingerprint(current)).toBe(configurationFingerprint({ ...current, reglasAsignacion: [] }));
+    expect(configurationFingerprint(current)).not.toBe(configurationFingerprint({ ...current, rol: "PROFESIONAL" }));
+    users = new Map([["a", current]]);
+    const original = store.withLockedRecipient;
+    const load = vi.fn(async () => rows);
+    store.withLockedRecipient = (claim, work) => {
+      users.set("a", { ...current, rol: "PROFESIONAL" });
+      return original(claim, (recipient) => work(recipient, load));
+    };
+    const send = vi.fn(); await run({ send });
+    expect(send).not.toHaveBeenCalled(); expect(load).not.toHaveBeenCalled();
+    expect(records.get(`a:${date}`)?.outcome?.codigoResultado).toBe("CONFIGURACION_CAMBIADA");
+  });
   it("aplica las mismas combinaciones de problema, establecimiento y tipo antes de formatear texto y HTML", async () => {
     users = new Map([["a", user("a", [], { reglasAsignacion: [
       { problemaSalud: "diabetes", establecimiento: "centro norte", tipoGarantia: "consulta" },

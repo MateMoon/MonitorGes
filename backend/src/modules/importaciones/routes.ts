@@ -59,7 +59,9 @@ export async function importValidationRoutes(app: FastifyInstance) {
   app.post("/", { preHandler: requireImportPermission }, async (request, reply) => {
     try {
       const { buffer, filename } = await uploadedFile(request);
-      return reply.code(201).send({ data: await importWorkbook(buffer, filename, request.authUser!.id) });
+      const requestId = request.headers["x-import-request-id"];
+      if (Array.isArray(requestId)) throw new WorkbookInputError("INVALID_IMPORT_REQUEST_ID", "El identificador de solicitud de importación debe ser único.", 400);
+      return reply.code(201).send({ data: await importWorkbook(buffer, filename, request.authUser!.id, { solicitudId: requestId }) });
     } catch (error) {
       return uploadError(error, reply, request, error instanceof WorkbookInputError ? 400 : 500);
     }

@@ -7,6 +7,7 @@ import { isTransientEmailFailure, serializeEmailFailureCode } from "./email-retr
 
 export interface IndividualRecipient {
   id: string;
+  rol?: "ADMIN" | "COORDINADOR_SOME" | "PROFESIONAL" | "LECTOR";
   email: string;
   activo: boolean;
   recibirInformeAutomatico: boolean;
@@ -14,17 +15,22 @@ export interface IndividualRecipient {
   reglasAsignacion?: AssignmentRule[];
 }
 const mailbox = z.string().trim().email().max(254);
+export function receivesCompleteReport(user: IndividualRecipient): boolean {
+  return user.rol === "COORDINADOR_SOME";
+}
 export function recipientEligibility(user: IndividualRecipient | null): string | null {
   if (!user || !user.activo) return "CUENTA_INACTIVA";
-  if (!user.recibirInformeAutomatico) return "RECEPCION_DESHABILITADA";
+  if (!receivesCompleteReport(user) && !user.recibirInformeAutomatico) return "RECEPCION_DESHABILITADA";
   if (!mailbox.safeParse(user.email).success) return "CORREO_INVALIDO";
+  if (receivesCompleteReport(user)) return null;
   if (user.reglasAsignacion !== undefined) {
     if (!user.reglasAsignacion.length || readAssignmentRules(user.reglasAsignacion)?.length !== user.reglasAsignacion.length) return "SIN_REGLAS_VALIDAS";
   } else if (!user.tipos.length || user.tipos.some((key) => !key || normalizeIdentityText(key) !== key)) return "SIN_TIPOS_VALIDOS";
   return null;
 }
 export function configurationFingerprint(user: IndividualRecipient): string {
-  const scope = user.reglasAsignacion !== undefined
+  const scope = receivesCompleteReport(user) ? { alcance: "TODAS_NO_CUMPLIDAS_HASTA_30_DIAS" }
+    : user.reglasAsignacion !== undefined
     ? { reglas: [...new Set(user.reglasAsignacion.map((rule) => JSON.stringify([rule.problemaSalud, rule.establecimiento, rule.tipoGarantia])))].sort() }
     : { tipos: [...new Set(user.tipos)].sort() };
   return createHash("sha256").update(JSON.stringify({ email: user.email.trim().toLowerCase(), ...scope })).digest("hex");
@@ -90,15 +96,16 @@ export async function deliverIndividualReports(options: {
         if (configurationFingerprint(current!) !== currentClaim.huellaConfiguracion || current!.email.trim().toLowerCase() !== currentClaim.destinatario) {
           return { estado: "OMITIDO", cantidadGarantias: 0, codigoResultado: "CONFIGURACION_CAMBIADA" };
         }
-        // Defensa adicional a la consulta SQL filtrada. Nunca se formatea un informe global.
+        // Solo Coordinador tiene alcance completo; los demás conservan sus reglas.
+        const complete = receivesCompleteReport(current!);
         const rules = current!.reglasAsignacion ?? legacyAssignmentRules(current!.tipos);
-        const rows = (await loadRows(current!.tipos)).filter((row) => matchesAssignmentRules(row, rules));
+        const rows = (await loadRows(current!.tipos)).filter((row) => complete || matchesAssignmentRules(row, rules));
         const report = buildGuaranteeReport(rows, options.fechaInforme);
         if (!report.length) return { estado: "OMITIDO", cantidadGarantias: 0, codigoResultado: "SIN_GARANTIAS_ELEGIBLES" };
         try {
           const accepted = await options.mailer.send({
             to: currentClaim.destinatario,
-            subject: `Informe individual de garantías GES — ${options.fechaInforme}`,
+            subject: `Informe ${complete ? "completo" : "individual"} de garantías GES — ${options.fechaInforme}`,
             text: formatGuaranteeReport(report, options.fechaInforme),
             html: formatGuaranteeReportHtml(report, options.fechaInforme),
             headers: { "Auto-Submitted": "auto-generated" },

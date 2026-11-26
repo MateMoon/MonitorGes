@@ -34,7 +34,8 @@ const tabs = [["resumen", "Resumen"], ["responsabilidades", "Responsabilidades"]
 function AdminSupervision({ isAdmin, nav, onSessionExpired }: Props) {
   const [state, setState] = useState<State>({ status: "loading" })
   const [attempt, setAttempt] = useState(0)
-  const [tab, setTab] = useState<typeof tabs[number][0]>("resumen")
+  const [selectedTab, setTab] = useState<string>("resumen")
+  const tab = tabs.find(([value]) => value === selectedTab)?.[0] ?? "resumen"
   const [activityVisited, setActivityVisited] = useState(false)
   const [responsibilitiesVisited, setResponsibilitiesVisited] = useState(false)
   const [summaryStale, setSummaryStale] = useState(false)
@@ -73,7 +74,7 @@ function AdminSupervision({ isAdmin, nav, onSessionExpired }: Props) {
   return <div className="page-in space-y-5">
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div><h2 className="text-2xl font-semibold">Supervisión SOME</h2><p className="mt-1 text-sm text-muted">Vista general de las garantías y su cobertura por funcionarios activos.</p>
-        {data && tab === "resumen" && <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-muted"><Clock className="size-3.5" />Actualizado: {new Intl.DateTimeFormat("es-CL", { dateStyle: "short", timeStyle: "short", timeZone: data.zonaHoraria }).format(new Date(data.generadoAt))} · hora de Santiago</p>}
+        {data && tab === "resumen" && <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-muted"><Clock className="size-3.5" />Actualizado: {new Intl.DateTimeFormat("es-CL", { dateStyle: "short", timeStyle: "short", timeZone: data.zonaHoraria }).format(new Date(data.generadoAt))}</p>}
       </div>
       {state.status === "ready" && tab === "resumen" && <Btn onClick={() => setAttempt((current) => current + 1)}><RefreshCw className="size-4" />Actualizar</Btn>}
     </div>

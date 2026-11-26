@@ -14,19 +14,21 @@ process.env.DATABASE_URL = isolated;
 const { prisma } = await import("../src/db/prisma.js");
 const adminId = "00000000-0000-4000-8000-000000000001";
 const professionalId = "00000000-0000-4000-8000-000000000002";
+const readerId = "00000000-0000-4000-8000-000000000099";
 const patientId = "00000000-0000-4000-8000-000000000003";
 const guaranteeId = "00000000-0000-4000-8000-000000000004";
 const legacyId = "00000000-0000-4000-8000-000000000005";
 const oldDate = new Date("2026-10-28T12:00:00Z");
 const admin = { id: adminId, nombre: "Admin aislado", rol: "ADMIN" };
 const professional = { id: professionalId, nombre: "Profesional aislado", rol: "PROFESIONAL" };
+const reader = { id: readerId, nombre: "Lector aislado", rol: "LECTOR" };
 let app: FastifyInstance | undefined;
 
 try {
   const cluster = await prisma.$queryRaw<Array<{ cluster: string }>>`SELECT current_setting('cluster_name') AS cluster`;
   assert.equal(cluster[0].cluster, "ges_management_isolated", "No se permite ejecutar esta prueba en otro clúster.");
   // Datos mínimos sintéticos en el esquema anterior: permiten probar el backfill.
-  for (const user of [admin, professional]) await prisma.$executeRaw`INSERT INTO "Usuario" ("id", "nombre", "username", "email", "rol", "updatedAt") VALUES (${user.id}::uuid, ${user.nombre}, ${user.id}, ${user.id + '@example.test'}, ${user.rol}::"RolUsuario", CURRENT_TIMESTAMP)`;
+  for (const user of [admin, professional, reader]) await prisma.$executeRaw`INSERT INTO "Usuario" ("id", "nombre", "username", "email", "rol", "updatedAt") VALUES (${user.id}::uuid, ${user.nombre}, ${user.id}, ${user.id + '@example.test'}, ${user.rol}::"RolUsuario", CURRENT_TIMESTAMP)`;
   await prisma.$executeRaw`INSERT INTO "Paciente" ("id", "rutNumero", "dv", "nombre", "updatedAt") VALUES (${patientId}::uuid, '12345678', '5', 'Paciente aislado', CURRENT_TIMESTAMP)`;
   for (const id of [guaranteeId, legacyId]) await prisma.$executeRaw`INSERT INTO "Garantia" ("id", "pacienteId", "problemaSalud", "nombreGarantia", "fechaInicio", "fechaLimite", "responsable", "updatedAt", "gestionadaAt", "gestionadaPorUsuarioId") VALUES (${id}::uuid, ${patientId}::uuid, 'Problema aislado', 'Garantía aislada', DATE '2026-10-01', DATE '2026-11-01', 'Centro aislado', CURRENT_TIMESTAMP, (CAST(${id === legacyId ? oldDate : null} AS timestamptz) AT TIME ZONE 'UTC'), ${id === legacyId ? professionalId : null}::uuid)`;
   const psql = process.env.GES_TEST_PSQL;
@@ -108,11 +110,13 @@ try {
   const { buildApp } = await import("../src/app.js");
   const { createSession } = await import("../src/modules/auth/auth-service.js");
   const session = await createSession(professionalId);
+  const readerSession = await createSession(readerId);
   app = buildApp(); app.log.level = "silent";
   const headers = { cookie: `ges_session=${session.token}`, origin: "http://localhost:8443" };
   const response = await app.inject({ method: "GET", url: `/api/garantias/${guaranteeId}`, headers });
   assert.equal(response.statusCode, 200); assert.equal(response.json().data.eventos.length, 6);
-  const denied = await app.inject({ method: "POST", url: `/api/garantias/${guaranteeId}/estado-gestion`, headers, payload: { estadoGestion: "CUMPLIDA", respaldo: "No autorizado", revisionGestion: 6 } });
+  // PROFESIONAL ya tiene permisos operativos; el rechazo corresponde a LECTOR.
+  const denied = await app.inject({ method: "POST", url: `/api/garantias/${guaranteeId}/estado-gestion`, headers: { ...headers, cookie: `ges_session=${readerSession.token}` }, payload: { estadoGestion: "CUMPLIDA", respaldo: "No autorizado", revisionGestion: 6 } });
   assert.equal(denied.statusCode, 403);
   const registered = await app.inject({ method: "POST", url: `/api/garantias/${guaranteeId}/gestion`, headers, payload: { tipoActuacion: "OTRA_GESTION", comentario: "Registro mediante API", revisionGestion: 6 } });
   assert.equal(registered.statusCode, 200); assert.equal(registered.json().data.estadoGestion, "PENDIENTE_RESOLUCION");

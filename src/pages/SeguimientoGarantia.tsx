@@ -71,7 +71,7 @@ export default function SeguimientoGarantia({ guarantee, canManage, isAdmin, onG
         {completed && !isAdmin && <p className="rounded-lg bg-canvas p-4 text-sm text-muted">Un administrador o coordinador debe reabrir la garantía antes de registrar nuevas actuaciones.</p>}
         {!canManage && <p className="text-sm text-muted">Tu perfil permite consultar el seguimiento.</p>}
       </div>
-      <Card><CardHeader title="Historial de gestiones y cambios" sub={`${events.length} registros · hora de Santiago`} right={<History className="size-4 text-muted" />} />
+      <Card><CardHeader title="Historial de gestiones y cambios" sub={`${events.length} registros`} right={<History className="size-4 text-muted" />} />
         {events.length === 0 ? <p className="p-5 text-sm text-muted">Sin actuaciones ni cambios registrados.</p> : <ol className="max-h-[680px] space-y-5 overflow-y-auto p-5">
           {events.map((event) => <li key={event.id} className="border-l-2 border-line pl-4">
             <p className="text-sm font-semibold">{EVENT_LABEL[event.tipo]}{event.tipoActuacion ? ` · ${ACTIONS[event.tipoActuacion]}` : ''}</p>

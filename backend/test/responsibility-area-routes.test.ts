@@ -52,8 +52,8 @@ describe("permisos de áreas de responsabilidad", () => {
     expect(mocks.saveUserAreas).toHaveBeenCalledWith(userId, "user-admin", [{ establecimientoId: "00000000-0000-4000-8000-000000000003", combinacionId: "00000000-0000-4000-8000-000000000004" }]);
   });
 
-  it("el coordinador tiene acceso operativo a áreas y catálogos, pero no a Gestión de usuarios", async () => {
-    const headers = { cookie: "ges_session=coordinator" };
+  it.each(["coordinator", "professional"])("%s tiene acceso operativo a áreas y catálogos, pero no a Gestión de usuarios", async (actor) => {
+    const headers = { cookie: `ges_session=${actor}` };
     const staff = await app.inject({ method: "GET", url: "/api/areas-responsabilidad/usuarios", headers });
     const areas = await app.inject({ method: "PUT", url: `/api/areas-responsabilidad/usuarios/${userId}`, headers, payload: { areas: [] } });
     const catalog = await app.inject({ method: "POST", url: "/api/areas-responsabilidad/catalogos/establecimiento", headers, payload: { nombre: "Centro ficticio" } });
@@ -67,7 +67,7 @@ describe("permisos de áreas de responsabilidad", () => {
     expect(mocks.listActiveStaff).toHaveBeenCalled();
   });
 
-  it.each(["professional", "reader"] as const)("deniega modificación de áreas a %s", async (role) => {
+  it.each(["reader"] as const)("deniega modificación de áreas a %s", async (role) => {
     const response = await app.inject({ method: "PUT", url: `/api/areas-responsabilidad/usuarios/${userId}`, headers: { cookie: `ges_session=${role}` }, payload: { areas: [] } });
     expect(response.statusCode).toBe(403);
     expect(mocks.saveUserAreas).not.toHaveBeenCalled();

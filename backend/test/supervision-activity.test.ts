@@ -1,15 +1,15 @@
 import Fastify from "fastify";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const memory = vi.hoisted(() => ({ rows: [] as any[], session: null as any, fail: false, logs: [] as string[] }));
+const memory = vi.hoisted(() => ({ rows: [] as any[], reviews: [] as any[], hasReviewsTable: false, session: null as any, fail: false, failReviews: false, logs: [] as string[] }));
 vi.mock("../src/db/prisma.js", () => {
   const project = (row: any, select: any): any => Object.fromEntries(Object.entries(select).map(([key, selection]: [string, any]) => [key, selection === true ? row[key] : project(row[key], selection.select)]));
   const write = vi.fn(() => { throw new Error("No writes allowed"); });
   const prisma: any = {
     eventoGarantia: {
-      findMany: vi.fn(async ({ select, take, orderBy }: any) => {
+      findMany: vi.fn(async ({ select, take, orderBy = [], where }: any) => {
         if (memory.fail) throw new Error("PRIVATE_SQL_PATIENT_AND_PARAMETERS");
-        const rows = [...memory.rows].sort((a, b) => {
+        const rows = memory.rows.filter(row => !where || where.id.in.includes(row.id)).sort((a, b) => {
           for (const field of orderBy) {
             const [key, direction] = Object.entries(field)[0];
             const difference = a[key] < b[key] ? -1 : a[key] > b[key] ? 1 : 0;
@@ -17,11 +17,24 @@ vi.mock("../src/db/prisma.js", () => {
           }
           return 0;
         });
-        return rows.slice(0, take).map((row) => project(row, select));
+        return rows.slice(0, take ?? rows.length).map((row) => project(row, select));
       }),
       create: write, update: write, delete: write,
     },
     garantia: { update: write }, usuario: { update: write },
+    resolucionFilaImportacion: {
+      findMany: vi.fn(async ({ where, select }: any) => {
+        if (memory.failReviews) throw new Error("PRIVATE_RESOLUTION_SQL_AND_PARAMETERS");
+        return memory.reviews.filter(row => where.id.in.includes(row.id)).map(row => project(row, select));
+      }), create: write, update: write, delete: write,
+    },
+    $queryRaw: vi.fn(async (sql: TemplateStringsArray, limit?: number) => {
+      if (memory.fail) throw new Error("PRIVATE_SQL_PATIENT_AND_PARAMETERS");
+      if (sql.join("").includes("to_regclass")) return [{ present: memory.hasReviewsTable }];
+      const keys = [...memory.rows.map(row => ({ ...row, fuente: "GESTION" })), ...memory.reviews.map(row => ({ ...row, fuente: "REVISION_IMPORTACION", secuencia: null }))];
+      keys.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime() || a.fuente.localeCompare(b.fuente) || (b.secuencia ?? 0) - (a.secuencia ?? 0) || b.id.localeCompare(a.id));
+      return keys.slice(0, limit).map(({ id, fuente }) => ({ id, fuente }));
+    }),
     $executeRaw: vi.fn(async () => 0),
     $transaction: vi.fn(async (work: any) => work(prisma)),
     _write: write,
@@ -46,9 +59,62 @@ app.decorateRequest("authUser", null);
 app.register(supervisionRoutes, { prefix: "/api/supervision" });
 const request = (headers: Record<string, string> = { cookie: "ges_session=synthetic-token" }) => app.inject({ method: "GET", url: "/api/supervision/eventos", headers });
 beforeEach(() => {
-  vi.clearAllMocks(); memory.rows = []; memory.fail = false; memory.logs = [];
+  vi.clearAllMocks(); memory.rows = []; memory.reviews = []; memory.hasReviewsTable = false; memory.fail = false; memory.failReviews = false; memory.logs = [];
   memory.session = { id: "admin", nombre: "Cuenta de prueba", rol: "ADMIN", puedeCargarNominas: false };
   vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(new Date("2026-11-18T14:00:00Z"));
+});
+
+const review = (id: string, decision: "MISMA" | "DISTINTA", createdAt = new Date("2026-11-18T12:30:00Z")) => ({
+  id, decision, autorNombre: "Supervisor histórico", usuarioId: "supervisor-id", justificacion: "Antecedentes revisados y justificados", createdAt,
+  garantiaResultadoId: decision === "MISMA" ? "preserved-guarantee" : "new-guarantee",
+  garantiaResultado: { ...event(1).garantia, id: decision === "MISMA" ? "preserved-guarantee" : "new-guarantee" },
+  fila: { importacionId: "import-id", hoja: "Nómina sintética", numeroFila: 8, importacion: { nombreArchivo: "origen-sintetico.xlsx" } },
+  huellaSolicitud: "PRIVATE_HASH", antecedentesRevisados: "PRIVATE_SNAPSHOTS",
+});
+describe("Cronología combinada de revisiones y gestiones", () => {
+  it("proyecta MISMA y DISTINTA desde la resolución sin inventar actuaciones", async () => {
+    memory.hasReviewsTable = true; memory.rows = [event(1)]; memory.reviews = [review("same", "MISMA"), review("distinct", "DISTINTA", new Date("2026-11-18T12:40:00Z"))];
+    const result = (await request()).json().data.eventos;
+    expect(result.map((row: any) => row.tipo)).toEqual(["REVISION_IMPORTACION", "REVISION_IMPORTACION", "ACTUACION"]);
+    expect(result[0]).toMatchObject({ id: "revision-importacion:distinct", secuencia: null, tipoActuacion: null, estadoAnterior: null, estadoNuevo: null, autorNombre: "Supervisor histórico", usuarioId: "supervisor-id",
+      garantia: { id: "new-guarantee" }, revisionImportacion: { decision: "DISTINTA", descripcion: "Se confirmó una garantía distinta y se incorporó un nuevo registro", justificacion: "Antecedentes revisados y justificados", garantiaResultadoId: "new-guarantee", origen: { archivo: "origen-sintetico.xlsx", numeroFila: 8 } },
+    });
+    expect(result[1].revisionImportacion.descripcion).toBe("Se confirmó que los datos recibidos corresponden a una garantía existente");
+    expect(result[1].garantia.id).toBe("preserved-guarantee");
+    expect((prisma as any)._write).not.toHaveBeenCalled(); expect(JSON.stringify(result)).not.toContain("PRIVATE_");
+  });
+  it("aplica una sola ventana global de 30 y conserva todos los empates de forma estable", async () => {
+    memory.hasReviewsTable = true;
+    memory.rows = Array.from({ length: 40 }, (_, index) => event(index + 1, { createdAt: new Date(Date.UTC(2026, 10, 18, 12, index * 2)) }));
+    memory.reviews = Array.from({ length: 40 }, (_, index) => review(`review-${index}`, index % 2 ? "MISMA" : "DISTINTA", new Date(Date.UTC(2026, 10, 18, 12, index * 2 + 1))));
+    const first = (await request()).json().data.eventos, second = (await request()).json().data.eventos;
+    expect(first).toHaveLength(30); expect(first.map((row: any) => row.id)).toEqual(second.map((row: any) => row.id));
+    expect(new Set(first.map((row: any) => row.id)).size).toBe(30);
+    expect(first.filter((row: any) => row.tipo === "REVISION_IMPORTACION")).toHaveLength(15);
+    expect(first.every((row: any, index: number) => !index || row.createdAt <= first[index - 1].createdAt)).toBe(true);
+    const args = vi.mocked(prisma.eventoGarantia.findMany).mock.calls[0][0]; expect(args?.take).toBeUndefined();
+  });
+  it("distingue IDs iguales entre tablas y no depende de la activación de retención o API", async () => {
+    vi.stubEnv("IMPORT_RETENTION_ENABLED", "false"); vi.stubEnv("DATA_QUALITY_ENABLED", "false");
+    try {
+      memory.hasReviewsTable = true; memory.rows = [event(1, { id: "shared-id" })]; memory.reviews = [review("shared-id", "MISMA")];
+      const first = (await request()).json().data.eventos;
+      expect(first.map((row: any) => row.id)).toEqual(["revision-importacion:shared-id", "shared-id"]);
+      expect((await request()).json().data.eventos).toEqual(first);
+      expect((prisma as any)._write).not.toHaveBeenCalled();
+    } finally { vi.unstubAllEnvs(); }
+  });
+  it("una tabla migrada sin resoluciones conserva la actividad normal y el vacío real", async () => {
+    memory.hasReviewsTable = true;
+    expect((await request()).json().data.eventos).toEqual([]);
+    memory.rows = [event(1)]; expect((await request()).json().data.eventos[0].tipo).toBe("ACTUACION");
+    expect(prisma.resolucionFilaImportacion.findMany).not.toHaveBeenCalled();
+  });
+  it("un error en resoluciones rechaza todo el historial sin publicar una cronología parcial", async () => {
+    memory.hasReviewsTable = true; memory.rows = [event(1)]; memory.reviews = [review("same", "MISMA")]; memory.failReviews = true;
+    const response = await request(); expect(response.statusCode).toBe(503); expect(response.json()).not.toHaveProperty("data");
+    expect(response.body).not.toContain("PRIVATE_"); expect(memory.logs.join("")).not.toContain("PRIVATE_");
+  });
 });
 afterEach(() => vi.useRealTimers());
 afterAll(() => app.close());

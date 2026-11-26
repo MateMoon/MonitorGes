@@ -204,3 +204,255 @@ El bloqueo por intentos reside en memoria: reiniciar el proceso lo reinicia y va
 ### Scheduler de informes automáticos
 
 El mecanismo operativo es exclusivamente individual. Ver la sección de informes individuales y el procedimiento enlazado; mantener AUTO_EMAIL_ENABLED=false hasta completar la migración y verificación autorizadas.
+
+### Retención de filas de importación: etapa 3, desactivada
+
+`IMPORT_RETENTION_ENABLED` está desactivada si no existe o vale exactamente `false`.
+Solo el literal exacto `true` habilita la retención. Valores vacíos, espacios,
+`TRUE`, `1`, `yes` y otros textos se rechazan antes de importar; nunca habilitan
+el flujo por coerción. Esta implementación no modifica los archivos de entorno
+de QA ni producción. Mantenerla desactivada hasta disponer del flujo completo
+de resolución y autorización para aplicar las migraciones.
+
+Con la retención desactivada se conservan las reglas operativas del importador:
+no se consultan ni escriben las tablas nuevas. El cliente Prisma generado sigue
+siendo compatible con el esquema anterior porque los campos escalares de
+`Importacion` no cambiaron. El bloqueo compartido por identidad de paciente
+coordina ambos modos sin cambiar los criterios de coincidencia.
+
+El modo habilitado requiere `20261125120000_import_row_persistence` y la nueva
+migración aditiva `20261125150000_import_retention_progress`. Esta última crea
+únicamente `ControlRetencionImportacion`, que conserva el UUID de solicitud,
+huella del archivo, versión de política, contadores y resultados por número de
+fila. El progreso no duplica RUT, nombres ni datos clínicos. No se modifican
+migraciones anteriores ni tablas históricas de Calidad de datos.
+
+Primero se valida el archivo con el parser existente y se evalúa la nómina
+completa contra el catálogo. Después, cada grupo de filas del mismo paciente
+se vuelve a clasificar bajo bloqueo de identidad, paciente y garantías, antes
+de cualquier escritura. Esto incluye contradicciones entre familias que
+comparten nombre de paciente. Las filas dudosas nunca pasan al escritor normal.
+El resultado completo del parser se indexa una vez por identidad de paciente.
+Las comprobaciones transaccionales usan todas las filas y familias de esa
+identidad; las dependencias de la política no cruzan pacientes. Así se conserva
+la detección de contradicciones sin reclasificar toda la nómina por cada fila.
+Cada operación normal vuelve a leer candidatas bajo esos bloqueos. Las
+repeticiones equivalentes se omiten y conservan su número de fila en el progreso.
+Las filas retenidas guardan su hoja real, número, motivos y evidencia mediante
+el servicio de persistencia, sin elegir candidatas ni crear garantías.
+
+El grupo es atómico: las escrituras normales, evidencia retenida, resultados y
+contadores confirman o revierten juntos. La evidencia se guarda después de las
+escrituras seguras de otras familias del grupo para que un cambio permitido del
+nombre del paciente no la deje desactualizada al confirmar. Si falla un grupo,
+se revierte completo y se registran errores de procesamiento separados de la
+validación. Otros grupos ya confirmados se conservan. Una interrupción antes de
+guardar el progreso puede recuperarse reenviando el mismo archivo y solicitud.
+
+El encabezado opcional `X-Import-Request-Id` admite un UUID. En modo habilitado,
+repetirlo con la misma cuenta, nombre de archivo y contenido recupera el progreso
+o devuelve el resultado confirmado, sin duplicar efectos ni contadores.
+Reutilizarlo con otros datos se rechaza. Si no se envía, el servidor crea un UUID
+para esa ejecución; para reintentar entre solicitudes HTTP hay que conservar y
+reenviar el UUID del cliente. Importar nómina lo conserva mientras se reintenta
+el archivo seleccionado; seleccionar nuevamente un archivo crea otra solicitud.
+El modo anterior no cambia su tratamiento de reimportaciones.
+
+La respuesta conserva todos los campos anteriores y añade
+`registrosPendientesRevision`, `registrosRepetidosOmitidos` y `registrosInvalidos`.
+`registrosConError` continúa incluyendo tanto filas inválidas como errores de
+procesamiento; una fila con varios errores de validación se cuenta una sola vez.
+Los pendientes no cuentan como errores. Una nómina solo con pendientes termina
+como `COMPLETADA_CON_OBSERVACIONES`. El historial habilitado recupera los
+contadores guardados, sin recalcularlos según decisiones posteriores.
+
+La importación conserva ADMIN, COORDINADOR_SOME y PROFESIONAL; LECTOR no importa.
+Consultar y resolver pendientes sigue reservado a ADMIN y COORDINADOR_SOME.
+Esta etapa no agrega menú, modal, endpoints de revisión ni resolución operativa
+de garantías distintas. Tampoco cambia Supervisión SOME, gestiones o correos.
+
+Pruebas reproducibles desde `backend`:
+
+```powershell
+npm.cmd run typecheck
+npm.cmd run build
+npm.cmd test
+npm.cmd run test:import-retention:postgres
+```
+
+El último comando crea un clúster PostgreSQL temporal local (requiere PostgreSQL
+18 en la ruta predeterminada del script), aplica allí el historial anterior,
+comprueba el importador desactivado sin las tablas nuevas, aplica las migraciones
+y ejecuta las pruebas de persistencia e integración. Usa datos sintéticos,
+deshabilita correos y detiene el clúster al terminar. No usa la conexión QA o
+productiva del entorno. La migración en QA continúa pendiente de autorización;
+ninguno de esos comandos la aplica en QA.
+
+La habilitación posterior consiste en completar y probar la resolución, obtener
+autorización de despliegue, aplicar las migraciones pendientes al destino
+aprobado y configurar expresamente `IMPORT_RETENTION_ENABLED=true` en ese backend.
+Hasta entonces, mantener `false` o la variable ausente.
+
+### Resolución operativa: etapa 4, API desactivada
+
+`DATA_QUALITY_ENABLED` controla exclusivamente la API de revisión. Su valor
+predeterminado es `false`; solo acepta los literales exactos `true` y `false`.
+Es independiente de `IMPORT_RETENTION_ENABLED`: ninguno de los dos se activa
+con este cambio. No se modificaron entornos ni datos QA o productivos. Las rutas
+registradas responden 503 a supervisores cuando la API está apagada, sin consultar
+las tablas de Calidad de datos. PROFESIONAL y LECTOR reciben 403 y una sesión
+ausente o expirada recibe 401. Los servicios también verifican el rol vigente y
+la cuenta activa en PostgreSQL, sin confiar en un usuario enviado por el cliente.
+
+Rutas preparadas para el futuro frontend:
+
+| Método y ruta | Resultado |
+| --- | --- |
+| `GET /api/calidad-datos/pendientes` | Lista, contador total de pendientes y paginación |
+| `GET /api/calidad-datos/pendientes/:id` | Datos de nómina, candidatas actuales, comparación y token de revisión |
+| `POST /api/calidad-datos/pendientes/:id/resolver` | Decisión operativa e idempotencia persistente |
+| `GET /api/calidad-datos/decisiones` | Historial de decisiones, autor, fecha, justificación, origen y garantía resultante |
+
+La lista acepta `page` (desde 1), `limit` (1–100), `importacionId` y `motivo`.
+`pendientesTotales` cuenta la bandeja completa y `pagination.total` refleja los
+filtros. El historial admite paginación, `importacionId` y `decision`.
+No se admite búsqueda por RUT ni nombres en la URL. El detalle incluye el estado
+de gestión y el número de eventos de tipo ACTUACION por candidata. Las respuestas
+usan `Cache-Control: no-store`. No exponen huellas internas, IDs de paciente,
+credenciales ni reglas de asignación. El RUT conservado en la nómina solo figura
+en el detalle autorizado. El registro HTTP de estas rutas se silencia para no
+reproducir datos sensibles de cuerpos, URLs mal formadas o consultas inválidas.
+La auditoría operativa se guarda en PostgreSQL dentro de la transacción.
+
+La resolución exige `version`, `solicitudId` UUID, `huellaRevision` del detalle,
+`decision` y `justificacion` (5–4000 caracteres tras quitar espacios externos).
+MISMA exige además `garantiaExistenteId`; se exige selección explícita incluso
+si solo hay una candidata. DISTINTA prohíbe ese identificador y exige
+`confirmaDistintaDeTodas: true`. Significa un episodio independiente de todas
+las candidatas relevantes mostradas, no solo de una candidata seleccionada.
+Los campos adicionales, IDs resultantes o usuarios enviados por el cliente se
+rechazan. Enviar la misma solicitud y contenido devuelve la misma decisión;
+reutilizarla con otra cuenta o contenido produce 409.
+
+MISMA conserva íntegramente la garantía: no actualiza paciente, fechas,
+establecimiento, versión, estado, actuaciones ni historial y no crea otra
+garantía. Solo resuelve la fila y registra su vínculo y auditoría.
+
+DISTINTA utiliza un escritor específico, sin invocar el importador general.
+Reutiliza al paciente sin sobrescribir su nombre ni otros campos; si no existe,
+lo crea con los datos conservados. Inserta exactamente una garantía con un UUID
+asignado dentro del servicio, los valores revalidados y los valores iniciales
+normales del modelo: SIN_GESTION, versión 1, revisión de gestión 0 y sin actuaciones
+o datos de gestión copiados. Paciente nuevo, garantía, resolución, estado de la
+fila y auditoría confirman o revierten conjuntamente.
+
+La fila se revalida con el parser original, reconstruyendo únicamente los campos
+conservados necesarios para la garantía y verificando su huella y versión de
+política. El RUT/DV vuelve a pasar la validación real. La columna informativa de
+días no se conserva ni determina la creación: ya se validó al recibir el Excel.
+Las candidatas se releen bajo el bloqueo de identidad compartido con ambos modos
+del importador, bloqueo del paciente y de sus garantías, y bloqueo de la fila
+retenida. Una versión de fila obsoleta o una candidata seleccionada fuera de la
+familia válida se rechaza sin efectos.
+
+El token de revisión vincula fila, versión, datos conservados y conjunto actual
+de candidatas, incluyendo versiones, revisión de gestión, última gestión,
+fechas de actualización y cantidad total de eventos. Una modificación o
+nueva candidata desde la lectura produce 409 STALE_CANDIDATES. El supervisor
+debe recargar el detalle y revisar todas las candidatas actuales; el nuevo token
+permite decidir sobre ese conjunto actualizado. Un GET nunca sustituye ni cambia
+las evidencias originales. La decisión guarda por separado las evidencias que
+se revisaron efectivamente y el significado de DISTINTA. Para compatibilidad,
+las llamadas internas antiguas sin token mantienen la comparación conservadora
+con las evidencias originales.
+
+La migración aditiva `20261125170000_review_resolution_evidence` añade solo
+`ResolucionFilaImportacion.antecedentesRevisados` como JSON nullable con una
+restricción de objeto. Las decisiones anteriores conservan NULL y no se
+reescriben; la auditoría terminal sigue siendo inmutable. Antes de habilitar la
+API se requieren las migraciones de las etapas 2, 3 y 4 en el destino aprobado.
+
+Pruebas reproducibles desde `backend`:
+
+```powershell
+npm.cmd run typecheck
+npm.cmd run build
+npm.cmd test
+npm.cmd run test:quality-resolution:postgres
+```
+
+El último comando crea y detiene un clúster temporal independiente. Ejecuta las
+comprobaciones anteriores y las de resolución con el escritor operativo real,
+sesiones reales de usuarios sintéticos e inyección local de las cuatro rutas,
+sin iniciar un servidor HTTP ni correos y sin usar la conexión QA. Comprueba
+MISMA y DISTINTA, pacientes nuevos y existentes, evidencia obsoleta y recargada,
+idempotencia, supervisores concurrentes, importaciones de la misma familia y
+rollback ante fallos de creación y auditoría.
+
+Las etapas 5 y 6 completan el menú independiente, el modal de comparación y la
+integración del historial de revisiones con Gestiones y cambios. Resumen y
+Responsabilidades conservan su diseño y comportamiento. La cronología combinada
+se describe en [supervision-eventos.md](docs/supervision-eventos.md) y se prueba
+en PostgreSQL aislado con `npm.cmd run test:supervision-review:postgres`.
+
+El 26 de noviembre de 2026 se aplicaron, con autorización explícita y respaldo
+restaurado previamente, las tres migraciones en `monitor_garantias_qa.public`.
+Prisma registra 16 migraciones aplicadas y ninguna pendiente. Se habilitó primero
+`DATA_QUALITY_ENABLED=true`, se comprobó la API y después se habilitó
+`IMPORT_RETENTION_ENABLED=true`. Los valores por defecto del código y del ejemplo
+siguen desactivados para otros entornos. No se modificó producción.
+
+El modal también ofrece «Actualizar datos y conservar gestión». Esta acción
+requiere candidata explícita, justificación y el token vigente. Envía
+`decision: "MISMA"` junto a `actualizarDatos: true`; MISMA sin esa marca conserva todos los
+datos anteriores y DISTINTA sigue creando un registro independiente.
+
+La actualización modifica exclusivamente problema de salud, nombre de garantía,
+fecha de inicio, fecha límite y establecimiento desde la fila revalidada. Conserva
+ID, paciente, estado, revisión de gestión, autor/fecha de gestión y eventos; solo
+incrementa la versión de datos. Rechaza una fecha de inicio que ya corresponda a
+otra candidata. Las nuevas fuentes, la fila resuelta y la auditoría se confirman
+en la misma transacción; reintentos idénticos no vuelven a aplicar el cambio.
+
+No requiere nuevas tablas, columnas ni valores enum. La resolución conserva
+`decision=MISMA` y registra `accion=ACTUALIZAR_DATOS`, campos, valores anteriores y
+nuevos y versiones en `antecedentesRevisados`, cuya auditoría permanece inmutable.
+La respuesta añade `actualizarDatos: true` solo en estas revisiones; el historial
+de decisiones y Gestiones y cambios muestran «Datos actualizados · Gestión
+conservada». Las decisiones históricas mantienen su significado. La nueva opción
+solo se muestra cuando el backend declara `puedeActualizarDatos`, permitiendo
+actualizar frontend y backend sin ofrecer una acción aún no soportada.
+
+La pantalla incluye un historial desplegable, paginado y de solo lectura que
+consulta `/api/calidad-datos/decisiones`. Las revisiones también aparecen en
+Gestiones y cambios. La cronología sigue mostrando decisiones persistidas aunque
+ambas configuraciones estén apagadas; sin las tablas nuevas conserva los eventos
+normales, sin errores ni escrituras.
+
+Recorrido integral reproducible con navegador real, desde `backend`, después de
+compilar el frontend desde la raíz y el backend:
+
+```powershell
+npm.cmd run test:quality-flow:browser
+```
+
+Requiere PostgreSQL 18 local y Chrome o Edge. Crea un clúster y una base temporales
+independientes, verifica su identidad antes de escribir y los detiene al terminar.
+Usa el frontend compilado, HTTP y autenticación reales, usuarios y nóminas
+completamente ficticios. No inicia el programador ni crea transporte SMTP. No usa
+QA ni necesita contraseñas de cuentas reales. Conserva capturas y un informe JSON
+en la carpeta temporal indicada al finalizar.
+
+Comprueba ambos perfiles supervisores, los rechazos para PROFESIONAL, LECTOR y
+sesiones ausentes, importaciones desde la interfaz, contadores, repeticiones,
+contradicciones, modal de escritorio y móvil, cierre sin decidir, MISMA, DISTINTA,
+gestiones conservadas, ambos historiales, cierre y reapertura de sesión,
+reintentos y decisiones simultáneas. Prueba también un conflicto real y recarga
+del modal. Las pruebas con escrituras se ejecutan únicamente en ese aislamiento.
+
+Recuperación operativa: desactivar primero `IMPORT_RETENTION_ENABLED` y reiniciar
+el backend; si corresponde, desactivar después `DATA_QUALITY_ENABLED`. Conservar
+filas y decisiones. No revertir tablas ni auditorías y no restaurar sobre QA sin
+revisar los cambios posteriores al respaldo. Un fallo de migración requiere
+inspeccionar su estado; no usar `migrate reset`, `db push` ni marcarla como aplicada
+sin verificar sus efectos.

@@ -191,7 +191,10 @@ export function createImportRowPersistence(db: PrismaClient) {
       const where = { ...(page.importacionId ? { fila: { importacionId: page.importacionId } } : {}), ...(page.decision ? { decision: page.decision } : {}) };
       const total = await tx.resolucionFilaImportacion.count({ where }), totalPages = Math.ceil(total / page.limit), current = Math.min(page.page, Math.max(1, totalPages));
       const resoluciones = await tx.resolucionFilaImportacion.findMany({ where, orderBy: [{ createdAt: "desc" }, { id: "desc" }], skip: (current - 1) * page.limit, take: page.limit,
-        include: { fila: { select: { importacionId: true, hoja: true, numeroFila: true } } },
+        include: {
+          fila: { select: { importacionId: true, hoja: true, numeroFila: true, importacion: { select: { nombreArchivo: true } } } },
+          garantiaResultado: { select: { id: true, problemaSalud: true, nombreGarantia: true, responsable: true, fechaInicio: true, fechaLimite: true, estadoGestion: true, paciente: { select: { nombre: true } } } },
+        },
       });
       return { resoluciones, pagination: { page: current, limit: page.limit, total, totalPages } };
     }, true);

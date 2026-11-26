@@ -337,6 +337,13 @@ try {
     assert.equal(resolved.statusCode, 200); assert.equal(resolved.json().data.resolucion.decision, "DISTINTA");
     const history = (await request(`/decisiones?importacionId=${source.pending.importacionId}&decision=DISTINTA`, cookies.get("ADMIN"))).json();
     assert.equal(history.pagination.total, 1); assert.equal(history.data[0].origen.numeroFila, source.pending.numeroFila);
+    const historyCard = history.data[0];
+    assert.equal(historyCard.origen.archivo, "resolucion-sintetica.xlsx");
+    assert.equal(historyCard.garantia.id, resolved.json().data.resolucion.garantiaResultadoId);
+    assert.equal(historyCard.garantia.paciente.nombre, source.patient.nombre);
+    assert.equal(historyCard.garantia.nombreGarantia, source.guarantee.nombreGarantia);
+    assert.equal(historyCard.garantia.fechaInicio, "2026-10-02"); assert.equal(historyCard.garantia.estadoGestion, "SIN_GESTION");
+    for (const key of ["datosValidados", "antecedentesRevisados", "passwordHash", "rutNumero", "huellaDatos"]) assert.ok(!JSON.stringify(historyCard).includes(`"${key}"`));
     assert.equal((await request(paths[1], cookies.get("ADMIN"))).json().data.puedeResolver, false);
     const updateSource = await pendingFixture(), updatePath = `/pendientes/${updateSource.pending.id}/resolver`;
     const updateDetail = (await request(`/pendientes/${updateSource.pending.id}`, cookies.get("ADMIN"))).json().data;
@@ -346,6 +353,8 @@ try {
     assert.equal(updated.statusCode, 200); assert.equal(updated.json().data.resolucion.actualizarDatos, true);
     const updateHistory = (await request(`/decisiones?importacionId=${updateSource.pending.importacionId}`, cookies.get("ADMIN"))).json();
     assert.equal(updateHistory.data[0].actualizarDatos, true);
+    assert.equal(updateHistory.data[0].garantia.id, updateSource.guarantee.id);
+    assert.equal(updateHistory.data[0].garantia.estadoGestion, updateSource.guarantee.estadoGestion);
     process.env.DATA_QUALITY_ENABLED = "false";
   });
   console.log(JSON.stringify({ passed: true, isolatedPostgres: true, checks, qaAccessed: false, productionAccessed: false, retentionEnabled: process.env.IMPORT_RETENTION_ENABLED === "true", operationalApiEnabledOutsideTest: false }));

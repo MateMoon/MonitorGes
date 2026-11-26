@@ -4,6 +4,7 @@ import type { UserRole } from '../services/usuarios'
 import { ApiError } from '../services/api'
 import { getPendingQualityRows, type PendingRowsResult } from '../services/calidad-datos'
 import { canReviewDataQuality } from '../permissions'
+import type { Nav } from './pages1'
 import ReviewGuaranteeModal from '../components/calidad/ReviewGuaranteeModal'
 import QualityDecisionHistory from '../components/calidad/QualityDecisionHistory'
 import { Btn, Card, Empty } from '../ui'
@@ -13,7 +14,7 @@ const REASONS: Record<string, string> = {
   FILAS_CONTRADICTORIAS: 'Datos contradictorios en la nómina', NOMBRE_PACIENTE_CONTRADICTORIO: 'Nombres diferentes en la nómina',
   FECHAS_DISTINTAS_EN_ARCHIVO: 'Fechas de inicio diferentes en la nómina',
 }
-export default function CalidadDatos({ role, onSessionExpired }: { role: UserRole; onSessionExpired: () => void }) {
+export default function CalidadDatos({ role, nav, onSessionExpired }: { role: UserRole; nav: Nav; onSessionExpired: () => void }) {
   const [result, setResult] = useState<PendingRowsResult | null>(null), [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null), [page, setPage] = useState(1), [revision, setRevision] = useState(0)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -49,7 +50,7 @@ export default function CalidadDatos({ role, onSessionExpired }: { role: UserRol
         <span>Página {result.pagination.page} de {result.pagination.totalPages}</span><div className="flex gap-2"><Btn aria-label="Página anterior" disabled={result.pagination.page <= 1} onClick={() => setPage(result.pagination.page - 1)}><ChevronLeft className="size-4" /></Btn><Btn aria-label="Página siguiente" disabled={result.pagination.page >= result.pagination.totalPages} onClick={() => setPage(result.pagination.page + 1)}><ChevronRight className="size-4" /></Btn></div>
       </div>}
     </Card>
-    <QualityDecisionHistory revision={revision} onSessionExpired={onSessionExpired} />
+    <QualityDecisionHistory revision={revision} nav={nav} onSessionExpired={onSessionExpired} />
     {selectedId && <ReviewGuaranteeModal key={selectedId} rowId={selectedId} onClose={() => setSelectedId(null)} onResolved={refresh} onSessionExpired={onSessionExpired} />}
   </div>
 }

@@ -35,7 +35,8 @@ it('carga el historial real al abrirlo y muestra decisión, autor, origen y just
   await screen.findByText('1 pendiente'); expect(api.decisions).not.toHaveBeenCalled();
   await userEvent.click(screen.getByText('Historial de decisiones'));
   await screen.findByText('MISMA · Garantía conservada');
-  expect(screen.getByText('Cuenta sintética · Hoja histórica · Fila 7')).toBeTruthy();
+  expect(screen.getByText('Cuenta sintética')).toBeTruthy();
+  expect(screen.getByText('Hoja histórica · Fila 7')).toBeTruthy();
   expect(screen.getByText('Antecedentes revisados')).toBeTruthy();
   const expectedTime = new Intl.DateTimeFormat('es-CL', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Santiago' }).format(new Date(resolution.createdAt));
   expect(screen.getByText(expectedTime)).toBeTruthy();
@@ -47,6 +48,44 @@ it('un historial vacío no inventa decisiones y permite reintentar un error', as
   await screen.findByText('Consulta temporalmente no disponible');
   await userEvent.click(screen.getByRole('button', { name: 'Reintentar historial' }));
   await screen.findByText('Todavía no hay decisiones registradas.');
+});
+it('muestra tarjetas completas para las tres decisiones y abre la garantía resultante correcta', async () => {
+  const nav = vi.fn();
+  const guarantee = { id: 'candidate-1', paciente: { nombre: 'Paciente de historial ficticio' }, problemaSalud: 'Problema ficticio', nombreGarantia: 'Tratamiento ficticio', establecimiento: 'Centro ficticio', estadoGestion: 'EN_GESTION', fechaInicio: '2027-01-01', fechaLimite: '2027-02-28' };
+  api.decisions.mockResolvedValue({ data: [
+    { ...resolution, origen: { importacionId: 'import-1', archivo: 'nomina-ficticia.xlsx', hoja: 'Hoja de origen', numeroFila: 2 }, garantia: guarantee },
+    { ...resolution, id: 'updated', actualizarDatos: true, origen: { importacionId: 'import-1', archivo: 'nomina-ficticia.xlsx', hoja: 'Hoja de origen', numeroFila: 3 }, garantia: guarantee },
+    { ...resolution, id: 'created', decision: 'DISTINTA', garantiaResultadoId: 'new-1', origen: { importacionId: 'import-1', archivo: 'nomina-ficticia.xlsx', hoja: 'Hoja de origen', numeroFila: 4 }, garantia: { ...guarantee, id: 'new-1', estadoGestion: 'SIN_GESTION' } },
+  ], pagination: { page: 1, limit: 10, total: 3, totalPages: 1 } });
+  render(createElement(Page, { role: 'ADMIN', nav, onSessionExpired: expired }));
+  await userEvent.click(screen.getByText('Historial de decisiones'));
+  const history = await screen.findByRole('list', { name: 'Decisiones de calidad de datos' }), cards = within(history).getAllByRole('listitem');
+  expect(cards).toHaveLength(3);
+  for (const [index, card] of cards.entries()) {
+    expect(within(card).getByText('Revisión de importación')).toBeTruthy();
+    expect(within(card).getByText('Cuenta sintética')).toBeTruthy();
+    expect(within(card).getByText(`nomina-ficticia.xlsx · Hoja de origen · Fila ${index + 2}`)).toBeTruthy();
+    expect(within(card).getByText('Problema ficticio · Tratamiento ficticio')).toBeTruthy();
+    expect(within(card).getByText('Inicio: 01/01/2027')).toBeTruthy();
+    expect(within(card).getByText('Límite: 28/02/2027')).toBeTruthy();
+    await userEvent.click(within(card).getByRole('button', { name: 'Abrir garantía de Paciente de historial ficticio' }));
+    expect(nav).toHaveBeenLastCalledWith('detalle', { id: index === 2 ? 'new-1' : 'candidate-1' });
+  }
+  expect(within(cards[0]).getByText('MISMA · Garantía conservada')).toBeTruthy();
+  expect(within(cards[1]).getByText('Datos actualizados · Gestión conservada')).toBeTruthy();
+  expect(within(cards[2]).getByText('DISTINTA · Nueva garantía')).toBeTruthy();
+  expect(within(cards[2]).getByText('Estado actual: Sin gestión')).toBeTruthy();
+  expect(history.textContent).not.toContain('Santiago');
+});
+it('permite desplegar una justificación larga sin cerrar el historial ni consultar nuevamente', async () => {
+  const justification = 'Justificación ficticia detallada. '.repeat(20);
+  api.decisions.mockResolvedValue({ data: [{ ...resolution, justificacion: justification, origen: { importacionId: 'import-1', hoja: 'Hoja ficticia', numeroFila: 2 } }], pagination: { page: 1, limit: 10, total: 1, totalPages: 1 } });
+  render(createElement(Page, { role: 'ADMIN', nav: vi.fn(), onSessionExpired: expired }));
+  await userEvent.click(screen.getByText('Historial de decisiones'));
+  await userEvent.click(await screen.findByText('Ver justificación'));
+  expect(screen.getByRole('list', { name: 'Decisiones de calidad de datos' })).toBeTruthy();
+  expect(screen.getByText('Ver justificación').closest('details')!.open).toBe(true);
+  expect(api.decisions).toHaveBeenCalledTimes(1);
 });
 const open = async () => {
   render(createElement(Modal, { rowId: detail.id, onClose: close, onResolved: resolved, onSessionExpired: expired }));

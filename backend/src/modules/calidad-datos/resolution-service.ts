@@ -7,6 +7,7 @@ import { operationalResolutionEffects } from "./resolution-writer.js";
 import { parseInput, resolutionSchema, RowPersistenceError, type DecisionsPageInput, type PendingPageInput, type PersistenceActor } from "./contracts.js";
 import { revalidateRetainedRow } from "./retained-row-validation.js";
 import { isSourceDataUpdate } from "./source-update.js";
+import { dateToCivil } from "../../utils/dates.js";
 
 const { filaId: _filaId, ...bodyFields } = resolutionSchema.shape;
 export const resolveBodySchema = z.object({ ...bodyFields,
@@ -69,7 +70,16 @@ export function createQualityResolutionService(db: PrismaClient) {
     async listDecisions(actor: PersistenceActor, query: DecisionsPageInput = {}) {
       authorize(actor);
       const result = await persistence.listResolutions(actor, query);
-      return { data: result.resoluciones.map(value => ({ ...decisionView(value), origen: value.fila })), pagination: result.pagination };
+      return { data: result.resoluciones.map(value => ({
+        ...decisionView(value),
+        origen: { importacionId: value.fila.importacionId, hoja: value.fila.hoja, numeroFila: value.fila.numeroFila, archivo: value.fila.importacion.nombreArchivo || null },
+        garantia: {
+          id: value.garantiaResultado.id, paciente: value.garantiaResultado.paciente,
+          problemaSalud: value.garantiaResultado.problemaSalud, nombreGarantia: value.garantiaResultado.nombreGarantia,
+          establecimiento: value.garantiaResultado.responsable, estadoGestion: value.garantiaResultado.estadoGestion,
+          fechaInicio: dateToCivil(value.garantiaResultado.fechaInicio), fechaLimite: dateToCivil(value.garantiaResultado.fechaLimite),
+        },
+      })), pagination: result.pagination };
     },
   };
 }

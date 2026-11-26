@@ -108,7 +108,7 @@ export default function App() {
           {page === 'detalle' && <Detalle id={sel} nav={nav} onGestionar={gestionar} canManage={globalAccess || user.rol === 'PROFESIONAL'} isAdmin={globalAccess} />}
           {page === 'importar' && <Importar nav={nav} toast={toast} />}
           {page === 'historial' && <Historial />}
-          {page === 'calidad' && <CalidadDatos role={user.rol} onSessionExpired={() => setUser(null)} />}
+          {page === 'calidad' && <CalidadDatos role={user.rol} nav={nav} onSessionExpired={() => setUser(null)} />}
           {page === 'supervision' && <SupervisionSome isAdmin={user.rol === 'ADMIN'} isCoordinator={user.rol === 'COORDINADOR_SOME'} nav={nav} onSessionExpired={() => setUser(null)} />}
           {/* Estadísticas sigue temporalmente deshabilitada.
           {page === 'estadisticas' && <Estadisticas />}

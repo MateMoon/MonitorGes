@@ -15,12 +15,19 @@ export interface QualityResolution {
   justificacion: string; garantiaResultadoId: string; createdAt: string
 }
 export type ComparisonField = 'problemaSalud' | 'nombreGarantia' | 'nombre' | 'fechaInicio' | 'fechaLimite' | 'responsable'
+export interface QualityDecisionRecord extends QualityResolution {
+  origen: { importacionId: string; hoja: string; numeroFila: number; archivo?: string | null }
+  garantia?: {
+    id: string; paciente: { nombre: string }; problemaSalud: string; nombreGarantia: string
+    establecimiento: string; estadoGestion: EstadoGestion; fechaInicio: string; fechaLimite: string
+  }
+}
 export interface QualityDecisionHistory {
-  data: (QualityResolution & { origen: { importacionId: string; hoja: string; numeroFila: number } })[]
+  data: QualityDecisionRecord[]
   pagination: PendingRowsResult['pagination']
 }
 export async function getQualityDecisions(page = 1, signal?: AbortSignal): Promise<QualityDecisionHistory> {
-  return apiRequest(`/api/calidad-datos/decisiones?page=${page}&limit=10`, { signal })
+  return apiRequest(`/api/calidad-datos/decisiones?page=${page}&limit=10`, { signal, cache: 'no-store' })
 }
 export interface QualityCandidate {
   id: string
